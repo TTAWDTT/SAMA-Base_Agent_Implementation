@@ -180,6 +180,12 @@ class PythonREPLTool(BaseTool):
     
     提供Python交互式执行环境
     Provides Python interactive execution environment
+    
+    ⚠️ 安全警告 / Security Warning:
+    此工具允许执行任意Python代码，这是其设计用途。
+    仅在受信任的环境中使用，或配合适当的沙箱机制。
+    This tool allows arbitrary Python code execution by design.
+    Use only in trusted environments or with proper sandboxing.
     """
     
     name: str = "python_repl"
@@ -197,6 +203,8 @@ class PythonREPLTool(BaseTool):
         """
         执行Python代码 / Execute Python code
         
+        ⚠️ 此方法执行任意代码 / This method executes arbitrary code
+        
         Args:
             code: Python代码 / Python code
             
@@ -213,12 +221,14 @@ class PythonREPLTool(BaseTool):
             with contextlib.redirect_stdout(stdout_capture):
                 # 尝试作为表达式执行 / Try to execute as expression
                 try:
-                    result = eval(code, self._globals, self._locals)
+                    # 注意：eval/exec执行任意代码是此工具的设计用途
+                    # Note: eval/exec for arbitrary code is the intended design
+                    result = eval(code, self._globals, self._locals)  # nosec: intentional design
                     if result is not None:
                         print(repr(result))
                 except SyntaxError:
                     # 作为语句执行 / Execute as statement
-                    exec(code, self._globals, self._locals)
+                    exec(code, self._globals, self._locals)  # nosec: intentional design
             
             output = stdout_capture.getvalue()
             return output.strip() if output else "执行完成 / Execution completed"

@@ -5,7 +5,6 @@
 # Provides various utility functions
 # ==============================================================================
 
-import hashlib
 import json
 import re
 import time
@@ -141,8 +140,9 @@ def generate_request_id() -> str:
     Returns:
         str: 唯一的请求ID / Unique request ID
     """
+    import uuid
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    random_part = hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+    random_part = uuid.uuid4().hex[:8]
     return f"req_{timestamp}_{random_part}"
 
 

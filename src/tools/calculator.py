@@ -3,8 +3,19 @@
 # ==============================================================================
 # 提供数学计算功能
 # Provides mathematical calculation functionality
+#
+# 安全说明 / Security Note:
+# 此工具使用 eval() 计算数学表达式，但通过以下措施确保安全：
+# 1. 使用 AST 解析验证表达式只包含允许的节点类型
+# 2. 使用受限的执行环境（只包含数学函数）
+# 3. 黑名单检查危险模式
+# This tool uses eval() for math expressions, but ensures safety via:
+# 1. AST parsing to validate expressions contain only allowed node types
+# 2. Restricted execution environment (only math functions)
+# 3. Blacklist checking for dangerous patterns
 # ==============================================================================
 
+import ast
 import math
 import re
 from typing import Any
@@ -111,15 +122,15 @@ class CalculatorTool(BaseTool):
         """
         验证表达式安全性 / Validate expression safety
         
+        使用AST解析和黑名单检查双重验证
+        Uses AST parsing and blacklist checking for double validation
+        
         Args:
             expression: 数学表达式 / Mathematical expression
             
         Raises:
             ValueError: 如果表达式包含不安全的内容 / If expression contains unsafe content
         """
-        # 移除空白字符 / Remove whitespace
-        expr = expression.replace(" ", "")
-        
         # 检查危险关键字 / Check for dangerous keywords
         dangerous_patterns = [
             r"__\w+__",  # 双下划线
@@ -140,3 +151,46 @@ class CalculatorTool(BaseTool):
         for pattern in dangerous_patterns:
             if re.search(pattern, expression, re.IGNORECASE):
                 raise ValueError(f"表达式包含不安全的内容 / Expression contains unsafe content: {pattern}")
+        
+        # 使用AST进行安全验证 / Use AST for safety validation
+        try:
+            tree = ast.parse(expression, mode='eval')
+            self._validate_ast_node(tree.body)
+        except SyntaxError as e:
+            raise ValueError(f"表达式语法错误 / Expression syntax error: {str(e)}")
+    
+    def _validate_ast_node(self, node: ast.AST) -> None:
+        """
+        递归验证AST节点 / Recursively validate AST node
+        
+        只允许安全的节点类型 / Only allows safe node types
+        
+        Args:
+            node: AST节点 / AST node
+            
+        Raises:
+            ValueError: 如果节点类型不安全 / If node type is unsafe
+        """
+        # 允许的节点类型 / Allowed node types
+        allowed_types = (
+            ast.Expression, ast.Num, ast.Constant, ast.BinOp, ast.UnaryOp,
+            ast.Compare, ast.Call, ast.Name, ast.Load, ast.Add, ast.Sub,
+            ast.Mult, ast.Div, ast.Mod, ast.Pow, ast.FloorDiv, ast.USub,
+            ast.UAdd, ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
+            ast.List, ast.Tuple
+        )
+        
+        if not isinstance(node, allowed_types):
+            raise ValueError(f"不允许的表达式类型 / Disallowed expression type: {type(node).__name__}")
+        
+        # 验证函数调用只能是允许的函数 / Validate function calls are only allowed functions
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name):
+                if node.func.id not in self.ALLOWED_FUNCTIONS:
+                    raise ValueError(f"不允许的函数 / Disallowed function: {node.func.id}")
+            else:
+                raise ValueError("不允许的函数调用方式 / Disallowed function call method")
+        
+        # 递归验证子节点 / Recursively validate child nodes
+        for child in ast.iter_child_nodes(node):
+            self._validate_ast_node(child)

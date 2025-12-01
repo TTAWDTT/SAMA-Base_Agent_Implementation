@@ -7,7 +7,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -62,7 +62,7 @@ class AgentConfig(BaseModel):
 class FileToolConfig(BaseModel):
     """文件工具配置 / File Tool Configuration"""
     enabled: bool = Field(default=True, description="是否启用 / Enabled")
-    allowed_directories: list[str] = Field(
+    allowed_directories: List[str] = Field(
         default=["./workspace", "./outputs"],
         description="允许访问的目录 / Allowed directories"
     )
@@ -71,7 +71,7 @@ class FileToolConfig(BaseModel):
 class CodeExecutorConfig(BaseModel):
     """代码执行工具配置 / Code Executor Configuration"""
     enabled: bool = Field(default=True, description="是否启用 / Enabled")
-    allowed_languages: list[str] = Field(
+    allowed_languages: List[str] = Field(
         default=["python", "javascript"],
         description="允许的编程语言 / Allowed programming languages"
     )
