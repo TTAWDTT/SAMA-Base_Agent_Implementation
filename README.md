@@ -1,6 +1,5 @@
-# AI Agent 项目 / AI Agent Project
-
-一个基于 Anthropic 官方 Agent 定义实现的 Python AI Agent 框架。
+# SAMA-Base_Agent_Implementation
+一个基于 Anthropic 官方 Agent 定义实现的 AI Agent 。
 
 > **Agent 定义**：An LLM agent runs tools in a loop to achieve a goal.
 > 
