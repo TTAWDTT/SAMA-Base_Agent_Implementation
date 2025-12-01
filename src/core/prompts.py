@@ -18,7 +18,7 @@ from src.core.config import get_config
 # 系统提示词 - 中文版 / System Prompts - Chinese Version
 # ==============================================================================
 
-SYSTEM_PROMPT_ZH = """你是一个智能助手，能够通过使用工具来完成各种任务。
+SYSTEM_PROMPT_ZH = """你是SAMA，一个智能助手，能够通过使用工具来完成各种任务。
 
 ## 核心原则
 
@@ -65,7 +65,7 @@ SYSTEM_PROMPT_ZH = """你是一个智能助手，能够通过使用工具来完�
 # 系统提示词 - 英文版 / System Prompts - English Version
 # ==============================================================================
 
-SYSTEM_PROMPT_EN = """You are an intelligent assistant capable of completing various tasks by using tools.
+SYSTEM_PROMPT_EN = """You are SAMA, an intelligent assistant capable of completing various tasks by using tools.
 
 ## Core Principles
 

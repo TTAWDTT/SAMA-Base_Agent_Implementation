@@ -70,11 +70,16 @@ class ReadFileTool(BaseTool):
         Returns:
             bool: 是否允许访问 / Whether access is allowed
         """
-        abs_path = os.path.abspath(file_path)
+        abs_path = os.path.normpath(os.path.abspath(file_path))
         for allowed_dir in self.allowed_directories:
-            allowed_abs = os.path.abspath(allowed_dir)
+            allowed_abs = os.path.normpath(os.path.abspath(allowed_dir))
+            # 使用normpath确保路径分隔符一致，支持Windows和Unix
+            # Use normpath to ensure consistent path separators for Windows and Unix
             if abs_path.startswith(allowed_abs):
-                return True
+                # 确保匹配的是完整的目录，不是前缀重叠
+                # Ensure the match is for complete directory, not prefix overlap
+                if len(abs_path) == len(allowed_abs) or abs_path[len(allowed_abs)] in (os.sep, os.altsep or ''):
+                    return True
         return False
     
     def _run(self, file_path: str, encoding: str = "utf-8") -> str:
@@ -128,11 +133,12 @@ class WriteFileTool(BaseTool):
     
     def _is_path_allowed(self, file_path: str) -> bool:
         """检查路径是否在允许范围内 / Check if path is within allowed range"""
-        abs_path = os.path.abspath(file_path)
+        abs_path = os.path.normpath(os.path.abspath(file_path))
         for allowed_dir in self.allowed_directories:
-            allowed_abs = os.path.abspath(allowed_dir)
+            allowed_abs = os.path.normpath(os.path.abspath(allowed_dir))
             if abs_path.startswith(allowed_abs):
-                return True
+                if len(abs_path) == len(allowed_abs) or abs_path[len(allowed_abs)] in (os.sep, os.altsep or ''):
+                    return True
         return False
     
     def _run(self, file_path: str, content: str, encoding: str = "utf-8", append: bool = False) -> str:
@@ -184,11 +190,12 @@ class ListDirectoryTool(BaseTool):
     
     def _is_path_allowed(self, dir_path: str) -> bool:
         """检查路径是否在允许范围内 / Check if path is within allowed range"""
-        abs_path = os.path.abspath(dir_path)
+        abs_path = os.path.normpath(os.path.abspath(dir_path))
         for allowed_dir in self.allowed_directories:
-            allowed_abs = os.path.abspath(allowed_dir)
+            allowed_abs = os.path.normpath(os.path.abspath(allowed_dir))
             if abs_path.startswith(allowed_abs):
-                return True
+                if len(abs_path) == len(allowed_abs) or abs_path[len(allowed_abs)] in (os.sep, os.altsep or ''):
+                    return True
         return False
     
     def _run(self, directory_path: str, recursive: bool = False) -> str:

@@ -202,29 +202,41 @@ class BaseTool(ABC):
         """
         获取工具的JSON Schema定义 / Get tool's JSON Schema definition
         
-        用于LLM的函数调用
-        Used for LLM function calling
+        用于LLM的函数调用（符合Kimi API要求）
+        Used for LLM function calling (compliant with Kimi API requirements)
         
         Returns:
             Dict: JSON Schema格式的工具定义 / Tool definition in JSON Schema format
         """
+        # 基础参数架构（符合Kimi要求）
+        # Basic parameter schema (compliant with Kimi requirements)
+        parameters = {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
+        
+        # 如果定义了输入Schema，使用Pydantic生成并进行验证
+        # If input schema is defined, use Pydantic to generate and validate
+        if self.input_schema:
+            pydantic_schema = self.input_schema.model_json_schema()
+            
+            # 提取properties和required，确保符合Kimi格式
+            # Extract properties and required, ensure compliance with Kimi format
+            if "properties" in pydantic_schema:
+                parameters["properties"] = pydantic_schema["properties"]
+            
+            if "required" in pydantic_schema:
+                parameters["required"] = pydantic_schema["required"]
+        
         schema = {
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description,
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
+                "description": self.description if self.description else f"{self.name} tool",
+                "parameters": parameters
             }
         }
-        
-        # 如果定义了输入Schema，使用Pydantic生成
-        # If input schema is defined, use Pydantic to generate
-        if self.input_schema:
-            schema["function"]["parameters"] = self.input_schema.model_json_schema()
         
         return schema
     

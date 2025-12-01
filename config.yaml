@@ -8,15 +8,15 @@
 # 模型配置 / Model Configuration
 model:
   # API密钥 / API Key (请替换为您的实际密钥 / Please replace with your actual key)
-  api_key: "your-api-key-here"
+  api_key: 9a11d204-c61c-4931-b5e7-e1760f297e6f
   
   # API基础URL / API Base URL
   # Kimi K2 Thinking 使用 OpenAI 兼容接口
   # Kimi K2 Thinking uses OpenAI compatible interface
-  base_url: "https://api.moonshot.cn/v1"
+  base_url: https://ark.cn-beijing.volces.com/api/v3
   
   # 模型名称 / Model Name
-  model_name: "moonshot-v1-128k"
+  model_name: ep-20251127172248-rqsjm
   
   # 温度参数 / Temperature (0.0 - 1.0)
   # 较低值产生更确定的输出，较高值产生更多样化的输出
@@ -50,8 +50,12 @@ tools:
     enabled: true
     # 允许访问的目录 / Allowed directories
     allowed_directories:
+      - "."
       - "./workspace"
       - "./outputs"
+      - "./src"
+      - "./docs"
+      - "./scripts"
   
   # 代码执行工具 / Code execution tool
   code_executor:

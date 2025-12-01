@@ -149,16 +149,25 @@ class BaseAgent:
         """
         获取API格式的工具定义 / Get tool definitions in API format
         
+        符合Kimi API要求的工具定义格式
+        Tool definition format compliant with Kimi API requirements
+        
         Returns:
             List[Dict]: OpenAI函数调用格式的工具定义 / Tool definitions in OpenAI function calling format
         """
         tools = []
         for tool in self.tools.values():
+            # 获取工具的Schema定义
+            # Get tool schema definition
+            tool_schema = tool.get_schema()
+            
+            # 确保基础结构符合Kimi要求
+            # Ensure basic structure complies with Kimi requirements
             tool_def = {
                 "type": "function",
                 "function": {
                     "name": tool.name,
-                    "description": tool.description,
+                    "description": tool.description if tool.description else f"{tool.name} tool",
                     "parameters": {
                         "type": "object",
                         "properties": {},
@@ -167,14 +176,18 @@ class BaseAgent:
                 }
             }
             
-            # 如果工具定义了输入Schema / If tool has input schema
-            if hasattr(tool, "input_schema") and tool.input_schema:
-                schema = tool.input_schema.model_json_schema()
-                tool_def["function"]["parameters"] = {
-                    "type": "object",
-                    "properties": schema.get("properties", {}),
-                    "required": schema.get("required", [])
-                }
+            # 合并Schema中的参数定义
+            # Merge parameter definitions from schema
+            if "function" in tool_schema and "parameters" in tool_schema["function"]:
+                params = tool_schema["function"]["parameters"]
+                
+                # 确保parameters是object类型
+                # Ensure parameters is object type
+                if isinstance(params, dict):
+                    if "properties" in params:
+                        tool_def["function"]["parameters"]["properties"] = params["properties"]
+                    if "required" in params:
+                        tool_def["function"]["parameters"]["required"] = params["required"]
             
             tools.append(tool_def)
         
@@ -245,8 +258,11 @@ class BaseAgent:
             List[ToolResult]: 工具执行结果列表 / List of tool execution results
         """
         results = []
+        # 维护tool_call_id的映射
+        # Maintain mapping of tool_call_ids
+        self._tool_call_ids = {}
         
-        for tool_call in tool_calls:
+        for i, tool_call in enumerate(tool_calls):
             tool_name = tool_call.function.name
             
             # 解析参数 / Parse arguments
@@ -255,11 +271,16 @@ class BaseAgent:
             except json.JSONDecodeError:
                 arguments = {}
             
+            # 获取tool_call_id（使用LLM返回的）
+            # Get tool_call_id from LLM response
+            call_id = getattr(tool_call, "id", None) or f"call_{tool_name}_{i}"
+            self._tool_call_ids[i] = call_id
+            
             # 记录工具调用 / Record tool call
             call_record = ToolCall(
                 tool_name=tool_name,
                 arguments=arguments,
-                call_id=tool_call.id
+                call_id=call_id
             )
             
             # 执行工具 / Execute tool
@@ -334,7 +355,23 @@ class BaseAgent:
                     
                     # 将助手消息添加到记忆（包含工具调用）
                     # Add assistant message to memory (including tool calls)
-                    self.memory.add_assistant_message(message.content or "")
+                    # 需要将tool_calls也添加到消息中，以便Kimi API能识别
+                    # Must include tool_calls so Kimi API can recognize them
+                    tool_calls_data = []
+                    for tool_call in message.tool_calls:
+                        tool_calls_data.append({
+                            "id": str(tool_call.id) if hasattr(tool_call, "id") else "",
+                            "type": "function",
+                            "function": {
+                                "name": tool_call.function.name,
+                                "arguments": tool_call.function.arguments
+                            }
+                        })
+                    
+                    self.memory.add_assistant_message(
+                        message.content or "",
+                        metadata={"tool_calls": tool_calls_data} if tool_calls_data else None
+                    )
                     
                     # 将工具结果添加到记忆 / Add tool results to memory
                     for i, tool_call in enumerate(message.tool_calls):
@@ -342,11 +379,37 @@ class BaseAgent:
                         result_text = format_tool_result(result.output)
                         if result.error_message:
                             result_text = f"错误 / Error: {result.error_message}"
+
+                        # 添加工具响应消息，必须包含tool_call_id（Kimi API 要求）
+                        # Add tool response message with required tool_call_id (Kimi API requirement)
+                        metadata = {"tool_name": tool_call.function.name}
                         
-                        # 添加工具响应消息 / Add tool response message
+                        # 确保总是有tool_call_id（Kimi API强制要求）
+                        # Always ensure tool_call_id is present (Kimi API requirement)
+                        call_id = None
+                        
+                        # 首先尝试使用我们维护的tool_call_id映射
+                        # First try to use our maintained tool_call_id mapping
+                        if hasattr(self, "_tool_call_ids") and i in self._tool_call_ids:
+                            call_id = self._tool_call_ids[i]
+                        # 其次尝试使用原始工具调用ID
+                        # Otherwise use original tool call ID
+                        elif hasattr(tool_call, "id") and tool_call.id:
+                            call_id = str(tool_call.id).strip()
+                        # 最后生成一个备选ID（以防万一）
+                        # Last resort: generate a fallback ID
+                        else:
+                            call_id = f"call_{tool_call.function.name}_{i}"
+                        
+                        # 添加到元数据（确保不为空）
+                        # Add to metadata (ensure not empty)
+                        if call_id:
+                            metadata["tool_call_id"] = call_id
+
                         self.memory.add_tool_message(
                             content=result_text,
-                            tool_name=tool_call.function.name
+                            tool_name=tool_call.function.name,
+                            metadata=metadata
                         )
                 else:
                     # 没有工具调用，任务完成 / No tool calls, task completed

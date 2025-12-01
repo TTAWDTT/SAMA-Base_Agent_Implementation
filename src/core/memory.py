@@ -46,10 +46,28 @@ class Message:
         Returns:
             Dict: OpenAI格式的消息 / Message in OpenAI format
         """
-        return {
-            "role": self.role,
-            "content": self.content
-        }
+        msg: Dict[str, Any] = {"role": self.role, "content": self.content}
+
+        # 如果是工具消息，尝试把 tool 相关元数据映射到 provider 所需的字段
+        # For tool messages, map tool-related metadata to provider-expected fields
+        if self.role == "tool":
+            # 一些 providers 期望 `name` 字段表示工具名
+            if self.metadata and "tool_name" in self.metadata:
+                msg["name"] = self.metadata.get("tool_name")
+
+            # 如果存在 tool_call_id，把它注入到消息中（Kimi API 要求此字段）
+            # If tool_call_id exists, inject it into the message (Kimi API requires this field)
+            if self.metadata and "tool_call_id" in self.metadata:
+                msg["tool_call_id"] = self.metadata.get("tool_call_id")
+        
+        # 如果是助手消息且包含tool_calls，添加到消息中
+        # If assistant message with tool_calls, add them to the message
+        elif self.role == "assistant":
+            if self.metadata and "tool_calls" in self.metadata:
+                msg["tool_calls"] = self.metadata.get("tool_calls")
+
+        return msg
+
 
 
 class ConversationMemory:
