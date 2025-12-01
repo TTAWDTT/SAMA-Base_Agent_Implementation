@@ -1,0 +1,99 @@
+# ==============================================================================
+# AI Agent 配置文件 / AI Agent Configuration File
+# ==============================================================================
+# 请将此文件复制为 config.local.yaml 并填入您的实际 API 密钥
+# Please copy this file to config.local.yaml and fill in your actual API keys
+# ==============================================================================
+
+# 模型配置 / Model Configuration
+model:
+  # API密钥 / API Key (请替换为您的实际密钥 / Please replace with your actual key)
+  api_key: "your-api-key-here"
+  
+  # API基础URL / API Base URL
+  # Kimi K2 Thinking 使用 OpenAI 兼容接口
+  # Kimi K2 Thinking uses OpenAI compatible interface
+  base_url: "https://api.moonshot.cn/v1"
+  
+  # 模型名称 / Model Name
+  model_name: "moonshot-v1-128k"
+  
+  # 温度参数 / Temperature (0.0 - 1.0)
+  # 较低值产生更确定的输出，较高值产生更多样化的输出
+  # Lower values produce more deterministic outputs, higher values produce more diverse outputs
+  temperature: 0.7
+  
+  # 最大token数 / Maximum tokens
+  max_tokens: 4096
+  
+  # 请求超时（秒）/ Request timeout (seconds)
+  timeout: 120
+
+# Agent配置 / Agent Configuration
+agent:
+  # 最大迭代次数 / Maximum iterations
+  # 防止无限循环 / Prevents infinite loops
+  max_iterations: 10
+  
+  # 是否启用详细日志 / Enable verbose logging
+  verbose: true
+  
+  # 提示词语言 / Prompt language
+  # 可选: "zh" (中文), "en" (English)
+  # Options: "zh" (Chinese), "en" (English)
+  prompt_language: "zh"
+
+# 工具配置 / Tools Configuration
+tools:
+  # 文件操作工具 / File operation tool
+  file_tool:
+    enabled: true
+    # 允许访问的目录 / Allowed directories
+    allowed_directories:
+      - "./workspace"
+      - "./outputs"
+  
+  # 代码执行工具 / Code execution tool
+  code_executor:
+    enabled: true
+    # 允许的编程语言 / Allowed programming languages
+    allowed_languages:
+      - "python"
+      - "javascript"
+    # 执行超时（秒）/ Execution timeout (seconds)
+    timeout: 30
+  
+  # 搜索工具 / Search tool
+  search_tool:
+    enabled: false
+    # 搜索API配置 / Search API configuration
+    api_key: ""
+    engine: "google"
+
+# 日志配置 / Logging Configuration
+logging:
+  # 日志级别 / Log level
+  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "INFO"
+  
+  # 日志文件路径 / Log file path
+  file_path: "outputs/logs/agent.log"
+  
+  # 是否输出到控制台 / Output to console
+  console_output: true
+  
+  # 日志格式 / Log format
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# 内存配置 / Memory Configuration
+memory:
+  # 是否启用对话记忆 / Enable conversation memory
+  enabled: true
+  
+  # 最大记忆条数 / Maximum memory entries
+  max_entries: 100
+  
+  # 记忆类型 / Memory type
+  # buffer: 简单缓冲, summary: 摘要记忆
+  # buffer: simple buffer, summary: summary memory
+  type: "buffer"

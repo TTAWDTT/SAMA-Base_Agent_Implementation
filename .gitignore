@@ -1,0 +1,96 @@
+# 字节编译 / Byte-compiled
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C扩展 / C extensions
+*.so
+
+# 分发/打包 / Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 单元测试 / Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+pytest_cache/
+
+# 翻译 / Translations
+*.mo
+*.pot
+
+# IDE设置 / IDE settings
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 环境 / Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# 输出目录 / Output directories
+outputs/
+logs/
+workspace/
+
+# 配置文件（包含敏感信息）/ Config files with sensitive data
+# 注意：config.yaml 示例保留，实际配置不应提交
+# Note: config.yaml example is kept, actual config should not be committed
+config.local.yaml
+.secrets/
+
+# 系统文件 / System files
+.DS_Store
+Thumbs.db
+
+# 临时文件 / Temporary files
+*.tmp
+*.temp
+.tmp/
+tmp/
