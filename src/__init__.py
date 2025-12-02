@@ -1,7 +1,3 @@
-# ==============================================================================
-# 源代码包 / Source Code Package
-# ==============================================================================
-
 from src.agents import BaseAgent
 from src.core import (
     Config,
@@ -11,6 +7,7 @@ from src.core import (
     get_logger,
     setup_logger,
     init_logging,
+    FileContext,
     ConversationMemory,
     get_memory,
     reset_memory,
@@ -57,6 +54,7 @@ __all__ = [
     "setup_logger",
     "init_logging",
     # Memory
+    "FileContext",
     "ConversationMemory",
     "get_memory",
     "reset_memory",

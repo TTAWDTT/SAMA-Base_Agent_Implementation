@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # ==============================================================================
 # AI Agent 主入口 / AI Agent Main Entry Point
 # ==============================================================================
@@ -10,9 +11,15 @@
 
 import argparse
 import sys
+import io
 from typing import Optional
 
 from src import BaseAgent, get_config, init_logging, get_logger
+
+# 修复 Windows 编码问题 / Fix Windows encoding issues
+if sys.platform == 'win32':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
 
 def create_agent() -> BaseAgent:
@@ -41,6 +48,8 @@ def interactive_mode(agent: BaseAgent) -> None:
     print("Enter your question, type 'exit' or 'quit' to exit")
     print("输入 'reset' 重置对话 / Type 'reset' to reset conversation")
     print("输入 'status' 查看状态 / Type 'status' to view status")
+    print("输入 '/context' 切换显式上下文模式 / Type '/context' to toggle verbose context")
+    print("输入 'files' 查看文件上下文 / Type 'files' to view file context")
     print("=" * 60 + "\n")
     
     while True:
@@ -68,6 +77,25 @@ def interactive_mode(agent: BaseAgent) -> None:
                 print()
                 continue
             
+            # 检查显式上下文命令 / Check verbose context command
+            if user_input.lower() in ["/context", "/ctx"]:
+                is_enabled = agent.toggle_verbose_context()
+                status_text = "开启 / ENABLED" if is_enabled else "关闭 / DISABLED"
+                print(f"\n📋 显式上下文模式已{status_text}")
+                print("   Verbose context mode {status_text}")
+                if is_enabled:
+                    print("   每次迭代都会显示传入LLM的上下文")
+                    print("   Context sent to LLM will be displayed in each iteration\n")
+                else:
+                    print()
+                continue
+            
+            # 检查文件命令 / Check files command
+            if user_input.lower() in ["files", "文件"]:
+                files_summary = agent.get_files_summary()
+                print(f"\n📁 {files_summary}\n")
+                continue
+            
             # 空输入跳过 / Skip empty input
             if not user_input:
                 continue
@@ -76,8 +104,16 @@ def interactive_mode(agent: BaseAgent) -> None:
             print("\n🤔 思考中... / Thinking...\n")
             response = agent.run(user_input)
             
+            # 显示思考过程 / Display thinking process
+            if response.steps:
+                for step in response.steps:
+                    if step.thinking:
+                        print(f"\n💭 【思考过程 / Thinking Process - 步骤 {step.step_number}】")
+                        print(f"{step.thinking}")
+                        print("-" * 60)
+            
             # 显示响应 / Display response
-            print(f"🤖 Agent: {response.final_answer}")
+            print(f"\n🤖 Agent: {response.final_answer}")
             
             # 显示执行信息 / Display execution info
             if response.steps:
@@ -104,6 +140,17 @@ def single_query(agent: BaseAgent, query: str) -> None:
         query: 用户查询 / User query
     """
     response = agent.run(query)
+    
+    # 显示思考过程 / Display thinking process
+    if response.steps:
+        print("\n" + "=" * 60)
+        print("💭 思考过程 / Thinking Process:")
+        print("=" * 60)
+        for step in response.steps:
+            if step.thinking:
+                print(f"\n【步骤 {step.step_number}】")
+                print(step.thinking)
+                print("-" * 60)
     
     print("\n" + "=" * 60)
     print("🤖 Agent Response:")

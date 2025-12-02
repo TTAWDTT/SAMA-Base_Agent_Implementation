@@ -15,6 +15,7 @@ from src.core.logger import (
     exception
 )
 from src.core.memory import (
+    FileContext,
     Message,
     ConversationMemory,
     get_memory,
@@ -47,6 +48,7 @@ __all__ = [
     "critical",
     "exception",
     # Memory
+    "FileContext",
     "Message",
     "ConversationMemory",
     "get_memory",

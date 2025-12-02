@@ -12,6 +12,8 @@
 - 🌐 **OpenAI 兼容接口** - 支持 Kimi K2 Thinking 等模型
 - 📝 **双语支持** - 中英文提示词和注释
 - 💾 **对话记忆** - 支持上下文管理
+- 📂 **文件上下文管理** - 动态管理对话中涉及的文件，支持增删改查（NEW! 🎉）
+- 🏢 **独立工作区** - Agent 专属工作目录，管理中间文件
 - 📊 **详细日志** - 完整的执行过程记录
 
 ## 📁 项目结构 / Project Structure
@@ -43,6 +45,7 @@ ai-agent-project/
 │   │   ├── config.py             # 配置管理
 │   │   ├── logger.py             # 日志管理
 │   │   ├── memory.py             # 对话记忆
+│   │   ├── context.py            # 上下文管理 (NEW!)
 │   │   ├── schema.py             # 数据结构
 │   │   └── prompts.py            # 提示词模板
 │   └── utils/                     # 工具函数
@@ -114,6 +117,60 @@ python main.py --help
 | `exit` / `quit` | 退出程序 / Exit program |
 | `reset` | 重置对话 / Reset conversation |
 | `status` | 查看 Agent 状态 / View Agent status |
+| `files` | 查看文件上下文 / View file context (NEW! 🎉) |
+
+### 文件上下文管理 / File Context Management
+
+Agent 支持在对话过程中动态管理文件上下文，适用于需要跨多轮对话引用、更新文件的场景。
+
+Agent supports dynamic file context management during conversations, suitable for scenarios requiring file references and updates across multiple turns.
+
+```python
+from src import BaseAgent
+
+# 创建 Agent（自动创建工作区）
+agent = BaseAgent()
+print(f"工作区: {agent.workspace}")
+
+# 添加文件到上下文
+agent.add_file_to_context(
+    path="analysis.py",
+    content="import pandas as pd",
+    abstract="数据分析脚本"
+)
+
+# 更新文件
+agent.update_file_in_context(
+    path="analysis.py",
+    content="import pandas as pd\nimport matplotlib.pyplot as plt",
+    abstract="数据分析脚本（增加可视化）"
+)
+
+# 移除不需要的文件
+agent.remove_file_from_context("old_config.json")
+
+# 查看文件摘要
+print(agent.get_files_summary())
+```
+
+详细文档请参见：[FILE_CONTEXT_GUIDE.md](docs/FILE_CONTEXT_GUIDE.md)
+
+完整示例请参见：[file_context_demo.py](examples/file_context_demo.py)
+
+# 运行任务
+response = agent.run("分析数据")
+
+# 查看上下文统计
+print(f"交互次数: {agent.context.session.interaction_count}")
+print(f"Token使用: {agent.context.session.total_tokens_used}")
+
+# 更新上下文
+agent.update_context(priority="high", user_id="123")
+```
+
+**详细文档**: 查看 [CONTEXT_USAGE_GUIDE.md](CONTEXT_USAGE_GUIDE.md) 了解完整的上下文系统使用方法。
+
+**演示脚本**: 运行 `python scripts/demo_context.py` 查看上下文系统的各种功能演示。
 
 ### 代码集成 / Code Integration
 

@@ -24,6 +24,14 @@ class ModelConfig(BaseModel):
         default="moonshot-v1-128k",
         description="模型名称 / Model Name"
     )
+    main_model_name: Optional[str] = Field(
+        default=None,
+        description="主模型名称 / Main Model Name"
+    )
+    sub_model_name: Optional[str] = Field(
+        default=None,
+        description="子模型名称 / Sub Model Name"
+    )
     temperature: float = Field(
         default=0.7,
         ge=0.0,
@@ -40,6 +48,11 @@ class ModelConfig(BaseModel):
         gt=0,
         description="请求超时（秒）/ Request timeout (seconds)"
     )
+    
+    @property
+    def effective_model_name(self) -> str:
+        """获取有效的模型名称 / Get effective model name"""
+        return self.main_model_name or self.model_name
 
 
 class AgentConfig(BaseModel):
@@ -56,6 +69,10 @@ class AgentConfig(BaseModel):
     prompt_language: str = Field(
         default="zh",
         description="提示词语言 / Prompt language"
+    )
+    workspace: str = Field(
+        default="./workspace",
+        description="Agent工作区目录 / Agent workspace directory"
     )
 
 

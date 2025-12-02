@@ -8,8 +8,49 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 from src.core.config import get_config
+
+
+@dataclass
+class FileContext:
+    """
+    文件上下文 / File Context
+    
+    管理Agent工作过程中涉及的文件
+    Manages files involved in Agent's work process
+    """
+    path: str  # 文件路径 / File path
+    content: Optional[str] = None  # 文件内容（可选，避免大文件占内存）/ File content (optional, avoid large files)
+    abstract: str = ""  # 文件摘要 / File abstract
+    timestamp: datetime = field(default_factory=datetime.now)  # 添加时间 / Added time
+    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据 / Extra metadata
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        转换为字典格式 / Convert to dictionary format
+        
+        Returns:
+            Dict: 文件上下文字典 / File context dictionary
+        """
+        return {
+            "path": self.path,
+            "content": self.content,
+            "abstract": self.abstract,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata
+        }
+    
+    def get_summary(self) -> str:
+        """
+        获取文件摘要信息 / Get file summary
+        
+        Returns:
+            str: 文件摘要 / File summary
+        """
+        size_info = f"({len(self.content)} chars)" if self.content else "(content not loaded)"
+        return f"{self.path} {size_info}: {self.abstract}"
 
 
 @dataclass
@@ -89,6 +130,7 @@ class ConversationMemory:
         self.max_entries = max_entries or config.memory.max_entries
         self.messages: List[Message] = []
         self.system_message: Optional[Message] = None
+        self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径 / File context dict, key is file path
     
     def set_system_message(self, content: str) -> None:
         """
@@ -232,6 +274,179 @@ class ConversationMemory:
             summary_parts.append(f"[{role_name}]: {msg.content[:100]}...")
         
         return "\n".join(summary_parts)
+    
+    # ==============================================================================
+    # 文件上下文管理方法 / File Context Management Methods
+    # ==============================================================================
+    
+    def add_file(
+        self,
+        path: str,
+        content: Optional[str] = None,
+        abstract: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> FileContext:
+        """
+        添加文件到上下文 / Add file to context
+        
+        Args:
+            path: 文件路径 / File path
+            content: 文件内容（可选）/ File content (optional)
+            abstract: 文件摘要 / File abstract
+            metadata: 额外元数据 / Extra metadata
+            
+        Returns:
+            FileContext: 添加的文件上下文 / Added file context
+        """
+        file_ctx = FileContext(
+            path=path,
+            content=content,
+            abstract=abstract,
+            metadata=metadata or {}
+        )
+        self.files[path] = file_ctx
+        return file_ctx
+    
+    def update_file(
+        self,
+        path: str,
+        content: Optional[str] = None,
+        abstract: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> Optional[FileContext]:
+        """
+        更新文件上下文 / Update file context
+        
+        Args:
+            path: 文件路径 / File path
+            content: 新的文件内容 / New file content
+            abstract: 新的文件摘要 / New file abstract
+            metadata: 新的元数据 / New metadata
+            
+        Returns:
+            FileContext: 更新后的文件上下文，如果文件不存在则返回None / Updated file context, None if not exists
+        """
+        if path not in self.files:
+            return None
+        
+        file_ctx = self.files[path]
+        if content is not None:
+            file_ctx.content = content
+        if abstract is not None:
+            file_ctx.abstract = abstract
+        if metadata is not None:
+            file_ctx.metadata.update(metadata)
+        
+        file_ctx.timestamp = datetime.now()
+        return file_ctx
+    
+    def remove_file(self, path: str) -> bool:
+        """
+        移除文件上下文 / Remove file context
+        
+        Args:
+            path: 文件路径 / File path
+            
+        Returns:
+            bool: 是否成功移除 / Whether removal was successful
+        """
+        if path in self.files:
+            del self.files[path]
+            return True
+        return False
+    
+    def get_file(self, path: str) -> Optional[FileContext]:
+        """
+        获取文件上下文 / Get file context
+        
+        Args:
+            path: 文件路径 / File path
+            
+        Returns:
+            FileContext: 文件上下文，如果不存在则返回None / File context, None if not exists
+        """
+        return self.files.get(path)
+    
+    def list_files(self) -> List[FileContext]:
+        """
+        列出所有文件上下文 / List all file contexts
+        
+        Returns:
+            List[FileContext]: 文件上下文列表 / List of file contexts
+        """
+        return list(self.files.values())
+    
+    def get_files_summary(self) -> str:
+        """
+        获取文件上下文摘要 / Get files summary
+        
+        Returns:
+            str: 文件摘要字符串 / Files summary string
+        """
+        if not self.files:
+            return "当前无文件 / No files currently"
+        
+        summary_lines = [f"当前文件数量 / Current files: {len(self.files)}"]
+        for file_ctx in self.files.values():
+            summary_lines.append(f"  - {file_ctx.get_summary()}")
+        
+        return "\n".join(summary_lines)
+    
+    def clear_files(self) -> None:
+        """清空所有文件上下文 / Clear all file contexts"""
+        self.files.clear()
+    
+    # ==============================================================================
+    # 工作记忆摘要方法 / Working Memory Summary Methods
+    # ==============================================================================
+    
+    def get_context_summary(self, last_n: int = 10) -> str:
+        """
+        生成最近操作的摘要 / Generate summary of recent operations
+        
+        Args:
+            last_n: 分析最近N条消息 / Analyze last N messages
+            
+        Returns:
+            str: 上下文摘要 / Context summary
+        """
+        if not self.messages:
+            return "暂无操作历史 / No operation history"
+        
+        summary_lines = []
+        
+        # 1. 工具使用统计 / Tool usage statistics
+        tool_counts = {}
+        for msg in self.messages[-last_n:]:
+            if msg.role == "tool":
+                tool_name = msg.metadata.get("tool_name", "unknown")
+                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+        
+        if tool_counts:
+            summary_lines.append("📊 已使用工具统计 / Tools used:")
+            for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True):
+                summary_lines.append(f"   • {tool}: {count}次")
+        
+        # 2. 最新工具结果 / Latest tool results
+        latest_tool_msg = None
+        for msg in reversed(self.messages):
+            if msg.role == "tool":
+                latest_tool_msg = msg
+                break
+        
+        if latest_tool_msg:
+            tool_name = latest_tool_msg.metadata.get("tool_name", "unknown")
+            preview = latest_tool_msg.content[:150]
+            if len(latest_tool_msg.content) > 150:
+                preview += "..."
+            summary_lines.append(f"\n🔍 最新工具结果 / Latest tool result ({tool_name}):")
+            summary_lines.append(f"   {preview}")
+        
+        # 3. 当前文件上下文 / Current file context
+        if self.files:
+            summary_lines.append(f"\n📁 当前文件数 / Files in context: {len(self.files)}")
+        
+        return "\n".join(summary_lines)
 
 
 # 全局记忆实例 / Global memory instance

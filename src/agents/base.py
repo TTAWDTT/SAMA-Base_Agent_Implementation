@@ -15,6 +15,8 @@
 
 import json
 import time
+import os
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 from openai import OpenAI
@@ -82,6 +84,9 @@ class BaseAgent:
         # 加载配置 / Load configuration
         self.config = config or get_config()
         
+        # 初始化工作区 / Initialize workspace
+        self._init_workspace()
+        
         # 初始化工具 / Initialize tools
         self._init_tools(tools)
         
@@ -96,6 +101,10 @@ class BaseAgent:
                 tools=list(self.tools.values()),
                 language=self.config.agent.prompt_language
             )
+        
+        # 注入工作区信息到系统提示词 / Inject workspace info into system prompt
+        self._inject_workspace_to_prompt()
+        
         self.memory.set_system_message(self.system_prompt)
         
         # 初始化OpenAI客户端 / Initialize OpenAI client
@@ -106,7 +115,81 @@ class BaseAgent:
         self.current_step = 0
         self.steps: List[AgentStep] = []
         
+        # 显式上下文模式 / Explicit context mode
+        self.verbose_context = False  # 是否显示详细上下文 / Whether to show detailed context
+        
         logger.info(f"Agent初始化完成 / Agent initialized with {len(self.tools)} tools")
+        logger.info(f"工作区 / Workspace: {self.workspace}")
+    
+    def _init_workspace(self) -> None:
+        """
+        初始化工作区目录 / Initialize workspace directory
+        
+        创建工作区目录（如果不存在），并设置工作区路径
+        Creates workspace directory if not exists, and sets workspace path
+        """
+        workspace_path = Path(self.config.agent.workspace)
+        workspace_path.mkdir(parents=True, exist_ok=True)
+        self.workspace = str(workspace_path.resolve())
+        logger.info(f"工作区已初始化 / Workspace initialized: {self.workspace}")
+    
+    def _inject_workspace_to_prompt(self) -> None:
+        """
+        将工作区信息注入到系统提示词 / Inject workspace info into system prompt
+        
+        告知Agent可以使用的工作区路径和文件上下文管理能力
+        Inform Agent about available workspace path and file context management capabilities
+        """
+        workspace_section = f"""
+
+## 工作区与文件管理 / Workspace and File Management
+
+**工作区路径 / Workspace Path**: `{self.workspace}`
+
+你可以在工作区中创建、修改和管理文件。对于重要的中间文件（如生成的脚本、数据文件等），你应该：
+You can create, modify and manage files in the workspace. For important intermediate files (e.g., generated scripts, data files), you should:
+
+1. **将文件保存到工作区** / Save files to workspace
+2. **使用文件工具记录文件上下文** / Record file context using file tools
+3. **在对话中引用这些文件** / Reference these files in conversation
+4. **及时清理不再需要的旧文件** / Clean up old files that are no longer needed
+
+当前文件上下文 / Current file context:
+{self.memory.get_files_summary()}
+
+## 工作记忆 / Working Memory
+
+{self.memory.get_context_summary()}
+
+⚠️ **重要提示 / Important Notes**:
+- 避免重复执行相同操作 / Avoid repeating the same operations
+- 如果某个工具已经成功调用过，分析结果而不是重复调用 / If a tool has been called successfully, analyze the result instead of calling again
+- 每次操作前，先检查工作记忆中是否已有相关结果 / Before each operation, check if results already exist in working memory
+"""
+        self.system_prompt += workspace_section
+    
+    def _extract_thinking(self, content: str) -> Optional[str]:
+        """
+        从内容中提取 <thinking> 标签内的文本 / Extract text within <thinking> tags
+        
+        Args:
+            content: 消息内容 / Message content
+            
+        Returns:
+            Optional[str]: 思考内容，如果没有则返回 None / Thinking content, None if not found
+        """
+        import re
+        
+        # 使用正则表达式提取 <thinking>...</thinking> 之间的内容
+        # Use regex to extract content between <thinking>...</thinking>
+        pattern = r'<thinking>(.*?)</thinking>'
+        match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+        
+        if match:
+            thinking_text = match.group(1).strip()
+            return thinking_text
+        
+        return None
     
     def _init_tools(self, tools: Optional[List[Union[BaseTool, Type[BaseTool]]]] = None) -> None:
         """
@@ -205,7 +288,7 @@ class BaseAgent:
         """
         try:
             response = self.client.chat.completions.create(
-                model=self.config.model.model_name,
+                model=self.config.model.effective_model_name,
                 messages=messages,
                 tools=self._get_tools_for_api() if self.tools else None,
                 temperature=self.config.model.temperature,
@@ -331,6 +414,10 @@ class BaseAgent:
                 # 获取对话历史 / Get conversation history
                 messages = self.memory.get_openai_messages()
                 
+                # 如果开启显式上下文模式，打印当前上下文 / Print context if verbose mode enabled
+                if self.verbose_context:
+                    self._print_current_context(messages)
+                
                 # 调用LLM / Call LLM
                 self.state = AgentState.THINKING
                 response = self._call_llm(messages)
@@ -339,12 +426,24 @@ class BaseAgent:
                 choice = response.choices[0]
                 message = choice.message
                 
+                # 提取 thinking（Extended Thinking）/ Extract thinking
+                content = message.content or ""
+                thinking_text = self._extract_thinking(content)
+                
+                # 如果没有 thinking 标签，使用内容前500字符作为备用 / Use first 500 chars as fallback
+                if not thinking_text:
+                    thinking_text = content[:500] if content else ""
+                
                 # 创建步骤记录 / Create step record
                 step = AgentStep(
                     step_number=self.current_step,
-                    thought=message.content or ""
+                    thinking=thinking_text
                 )
                 self.steps.append(step)
+                
+                # 如果有 thinking，记录到日志 / Log thinking if present
+                if thinking_text:
+                    logger.info(f"💭 Thinking: {thinking_text[:200]}..." if len(thinking_text) > 200 else f"💭 Thinking: {thinking_text}")
                 
                 # 检查是否有工具调用 / Check for tool calls
                 if message.tool_calls:
@@ -429,6 +528,7 @@ class BaseAgent:
                         final_answer=final_answer,
                         steps=self.steps,
                         total_iterations=self.current_step,
+                        total_tokens_used=0,
                         execution_time=execution_time
                     )
             
@@ -443,6 +543,7 @@ class BaseAgent:
                 final_answer="达到最大迭代次数，任务未完成。/ Reached max iterations, task not completed.",
                 steps=self.steps,
                 total_iterations=self.current_step,
+                total_tokens_used=0,
                 execution_time=execution_time,
                 error_message="Max iterations reached"
             )
@@ -458,6 +559,7 @@ class BaseAgent:
                 final_answer=f"执行过程中发生错误 / Error during execution: {str(e)}",
                 steps=self.steps,
                 total_iterations=self.current_step,
+                total_tokens_used=0,
                 execution_time=execution_time,
                 error_message=str(e)
             )
@@ -523,13 +625,12 @@ class BaseAgent:
         return False
     
     def reset(self) -> None:
-        """
-        重置Agent状态 / Reset Agent state
-        """
+        """重置Agent状态 / Reset Agent state"""
         self.state = AgentState.IDLE
         self.current_step = 0
         self.steps = []
         self.memory.clear(keep_system=True)
+        
         logger.info("Agent状态已重置 / Agent state reset")
     
     def get_status(self) -> Dict[str, Any]:
@@ -545,5 +646,158 @@ class BaseAgent:
             "total_steps": len(self.steps),
             "tools_count": len(self.tools),
             "memory_entries": len(self.memory.messages),
-            "context_length": self.memory.get_context_length()
+            "context_length": self.memory.get_context_length(),
+            "workspace": self.workspace,
+            "files_count": len(self.memory.files),
         }
+    
+    # ==============================================================================
+    # 文件上下文管理方法 / File Context Management Methods
+    # ==============================================================================
+    
+    def add_file_to_context(
+        self,
+        path: str,
+        content: Optional[str] = None,
+        abstract: str = "",
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        将文件添加到对话上下文 / Add file to conversation context
+        
+        Args:
+            path: 文件路径（相对或绝对）/ File path (relative or absolute)
+            content: 文件内容 / File content
+            abstract: 文件摘要 / File abstract
+            metadata: 额外元数据 / Extra metadata
+        """
+        self.memory.add_file(path, content, abstract, metadata)
+        logger.info(f"文件已添加到上下文 / File added to context: {path}")
+    
+    def update_file_in_context(
+        self,
+        path: str,
+        content: Optional[str] = None,
+        abstract: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        更新上下文中的文件 / Update file in context
+        
+        Args:
+            path: 文件路径 / File path
+            content: 新内容 / New content
+            abstract: 新摘要 / New abstract
+            metadata: 新元数据 / New metadata
+            
+        Returns:
+            bool: 是否成功更新 / Whether update was successful
+        """
+        result = self.memory.update_file(path, content, abstract, metadata)
+        if result:
+            logger.info(f"文件已更新 / File updated: {path}")
+            return True
+        else:
+            logger.warning(f"文件不存在，无法更新 / File does not exist, cannot update: {path}")
+            return False
+    
+    def remove_file_from_context(self, path: str) -> bool:
+        """
+        从上下文中移除文件 / Remove file from context
+        
+        Args:
+            path: 文件路径 / File path
+            
+        Returns:
+            bool: 是否成功移除 / Whether removal was successful
+        """
+        result = self.memory.remove_file(path)
+        if result:
+            logger.info(f"文件已从上下文移除 / File removed from context: {path}")
+            return True
+        else:
+            logger.warning(f"文件不存在，无法移除 / File does not exist, cannot remove: {path}")
+            return False
+    
+    def list_context_files(self) -> List[str]:
+        """
+        列出上下文中的所有文件路径 / List all file paths in context
+        
+        Returns:
+            List[str]: 文件路径列表 / List of file paths
+        """
+        return [f.path for f in self.memory.list_files()]
+    
+    def get_files_summary(self) -> str:
+        """
+        获取文件上下文摘要 / Get files context summary
+        
+        Returns:
+            str: 文件摘要 / Files summary
+        """
+        return self.memory.get_files_summary()
+    
+    # ==============================================================================
+    # 显式上下文模式方法 / Verbose Context Mode Methods
+    # ==============================================================================
+    
+    def toggle_verbose_context(self) -> bool:
+        """
+        切换显式上下文模式 / Toggle verbose context mode
+        
+        Returns:
+            bool: 当前状态 / Current state
+        """
+        self.verbose_context = not self.verbose_context
+        logger.info(f"显式上下文模式 / Verbose context mode: {'开启 / ON' if self.verbose_context else '关闭 / OFF'}")
+        return self.verbose_context
+    
+    def _print_current_context(self, messages: List[Dict]) -> None:
+        """
+        打印当前传入LLM的上下文 / Print current context sent to LLM
+        
+        Args:
+            messages: 消息列表 / Message list
+        """
+        print("\n" + "="*80)
+        print("📋 当前上下文 / Current Context")
+        print("="*80)
+        
+        for i, msg in enumerate(messages, 1):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            
+            # 根据角色使用不同的图标和颜色标识
+            role_icon = {
+                "system": "⚙️",
+                "user": "👤",
+                "assistant": "🤖",
+                "tool": "🔧"
+            }.get(role, "❓")
+            
+            print(f"\n{role_icon} [{i}] Role: {role}")
+            
+            # 显示内容预览（限制长度）
+            if len(content) > 300:
+                print(f"Content: {content[:300]}...")
+                print(f"[... 省略 {len(content) - 300} 字符 / {len(content) - 300} chars omitted]")
+            else:
+                print(f"Content: {content}")
+            
+            # 如果有工具调用，显示工具信息
+            if "tool_calls" in msg:
+                print(f"Tool Calls: {len(msg['tool_calls'])} 个工具调用")
+            
+            # 如果是工具消息，显示工具名称
+            if role == "tool" and "name" in msg:
+                print(f"Tool Name: {msg['name']}")
+            
+            print("-" * 80)
+        
+        # 统计信息
+        total_chars = sum(len(msg.get("content", "")) for msg in messages)
+        print(f"\n📊 统计 / Statistics:")
+        print(f"   - 消息数量 / Message count: {len(messages)}")
+        print(f"   - 总字符数 / Total characters: {total_chars:,}")
+        print(f"   - 估计token数 / Estimated tokens: ~{total_chars // 4:,}")
+        print("="*80 + "\n")

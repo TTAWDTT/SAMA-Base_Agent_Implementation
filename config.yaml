@@ -16,11 +16,10 @@ model:
   base_url: https://ark.cn-beijing.volces.com/api/v3
   
   # 模型名称 / Model Name
-  model_name: ep-20251127172248-rqsjm
+  main_model_name: ep-20251127172248-rqsjm   # Kimi K2 Thinking
+  sub_model_name: ep-20251101221159-hhmrg    # Kimi K2
   
-  # 温度参数 / Temperature (0.0 - 1.0)
-  # 较低值产生更确定的输出，较高值产生更多样化的输出
-  # Lower values produce more deterministic outputs, higher values produce more diverse outputs
+# 温度参数 / Temperature (0.0 - 1.0)
   temperature: 0.7
   
   # 最大token数 / Maximum tokens
@@ -33,7 +32,7 @@ model:
 agent:
   # 最大迭代次数 / Maximum iterations
   # 防止无限循环 / Prevents infinite loops
-  max_iterations: 10
+  max_iterations: 30
   
   # 是否启用详细日志 / Enable verbose logging
   verbose: true
@@ -42,6 +41,11 @@ agent:
   # 可选: "zh" (中文), "en" (English)
   # Options: "zh" (Chinese), "en" (English)
   prompt_language: "zh"
+  
+  # Agent工作区目录 / Agent workspace directory
+  # Agent将在此目录中生成中间文件、脚本等
+  # Agent will generate intermediate files, scripts, etc. in this directory
+  workspace: "./workspace"
 
 # 工具配置 / Tools Configuration
 tools:

@@ -96,7 +96,7 @@ class AgentStep:
     Records complete information of a single Agent iteration
     """
     step_number: int  # 步骤编号 / Step number
-    thought: str  # Agent的思考过程 / Agent's thought process
+    thinking: str = ""  # 思考内容（Extended Thinking）/ Thinking content
     tool_calls: List[ToolCall] = field(default_factory=list)  # 工具调用列表 / Tool calls
     tool_results: List[ToolResult] = field(default_factory=list)  # 工具结果列表 / Tool results
     response: Optional[str] = None  # 最终响应 / Final response
@@ -106,7 +106,7 @@ class AgentStep:
         """转换为字典 / Convert to dictionary"""
         return {
             "step_number": self.step_number,
-            "thought": self.thought,
+            "thinking": self.thinking,
             "tool_calls": [tc.to_dict() for tc in self.tool_calls],
             "tool_results": [tr.to_dict() for tr in self.tool_results],
             "response": self.response,
