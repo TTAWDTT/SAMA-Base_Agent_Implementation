@@ -30,9 +30,11 @@ pydantic>=2.0.0
 # 用于代码执行工具 / For code execution tool
 subprocess32>=3.5.4;python_version<"3.0"
 
-# 可选：用于搜索工具 / Optional: For search tool
-# google-api-python-client>=2.100.0
-# duckduckgo-search>=4.0.0
+# 搜索工具依赖 / Search tool dependencies
+# Tavily为主搜索引擎，DuckDuckGo为备用
+# Tavily is the primary search engine, DuckDuckGo is the fallback
+tavily-python>=0.5.0
+duckduckgo-search>=6.0.0
 
 # 开发依赖 / Development Dependencies
 pytest>=7.0.0

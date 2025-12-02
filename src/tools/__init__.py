@@ -6,7 +6,7 @@ from src.tools.base import BaseTool, ToolInput
 from src.tools.file_tool import ReadFileTool, WriteFileTool, ListDirectoryTool
 from src.tools.code_executor import CodeExecutorTool, PythonREPLTool
 from src.tools.calculator import CalculatorTool
-from src.tools.search_tool import WebSearchTool, DuckDuckGoSearchTool
+from src.tools.search_tool import WebSearchTool
 from src.tools.datetime_tool import GetCurrentTimeTool, DateCalculatorTool, TimeDifferenceTool
 
 # 所有可用工具 / All available tools
@@ -18,7 +18,6 @@ ALL_TOOLS = [
     PythonREPLTool,
     CalculatorTool,
     WebSearchTool,
-    DuckDuckGoSearchTool,
     GetCurrentTimeTool,
     DateCalculatorTool,
     TimeDifferenceTool,
@@ -32,6 +31,7 @@ DEFAULT_TOOLS = [
     CodeExecutorTool,
     CalculatorTool,
     GetCurrentTimeTool,
+    WebSearchTool,
 ]
 
 __all__ = [
@@ -49,7 +49,6 @@ __all__ = [
     "CalculatorTool",
     # Search Tools
     "WebSearchTool",
-    "DuckDuckGoSearchTool",
     # DateTime Tools
     "GetCurrentTimeTool",
     "DateCalculatorTool",

@@ -73,10 +73,10 @@ tools:
   
   # 搜索工具 / Search tool
   search_tool:
-    enabled: false
+    enabled: true
     # 搜索API配置 / Search API configuration
-    api_key: ""
-    engine: "google"
+    api_key: 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
+    engine: tavily
 
 # 日志配置 / Logging Configuration
 logging:
