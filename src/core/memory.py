@@ -211,12 +211,92 @@ class ConversationMemory:
     
     def get_openai_messages(self) -> List[Dict[str, str]]:
         """
-        获取OpenAI格式的消息列表 / Get messages in OpenAI format
+        获取OpenAI格式的消息列表（包含文件上下文）/ Get messages in OpenAI format (including file context)
+        
+        消息顺序 / Message order:
+        1. 系统消息（包含文件摘要）/ System message (with file summary)
+        2. 文件内容消息（如果有）/ File content messages (if any)
+        3. 对话历史 / Conversation history
         
         Returns:
             List[Dict]: OpenAI格式的消息列表 / List of messages in OpenAI format
         """
-        return [msg.to_openai_format() for msg in self.get_messages()]
+        messages = []
+        
+        # 1. 添加系统消息 / Add system message
+        if self.system_message:
+            messages.append(self.system_message.to_openai_format())
+        
+        # 2. 添加文件内容作为独立消息 / Add file contents as separate messages
+        if self.files:
+            file_context_msg = self._build_file_context_message()
+            if file_context_msg:
+                messages.append(file_context_msg)
+        
+        # 3. 添加对话历史 / Add conversation history
+        for msg in self.messages:
+            messages.append(msg.to_openai_format())
+        
+        return messages
+    
+    def _build_file_context_message(self) -> Optional[Dict[str, str]]:
+        """
+        构建包含文件内容的上下文消息 / Build message containing file contents
+        
+        将所有文件上下文整合成一条系统消息
+        Integrate all file contexts into a single system message
+        
+        Returns:
+            Optional[Dict]: 文件上下文消息，如果没有文件则返回 None
+                           File context message, or None if no files
+        """
+        if not self.files:
+            return None
+        
+        # 构建文件内容文本 / Build file content text
+        file_contents = []
+        file_contents.append("## 📁 当前文件上下文 / Current File Context\n")
+        file_contents.append(f"共有 {len(self.files)} 个文件在上下文中 / {len(self.files)} files in context\n")
+        
+        for path, file_ctx in self.files.items():
+            file_contents.append(f"\n### 文件 / File: `{path}`")
+            file_contents.append(f"**摘要 / Abstract**: {file_ctx.abstract}")
+            file_contents.append(f"**更新时间 / Updated**: {file_ctx.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 如果有元数据，显示元数据 / If metadata exists, show it
+            if file_ctx.metadata:
+                file_contents.append(f"**元数据 / Metadata**: {file_ctx.metadata}")
+            
+            # 如果有内容，显示内容 / If content exists, show it
+            if file_ctx.content:
+                # 限制内容长度，避免上下文过长 / Limit content length to avoid context overflow
+                max_len = 2000  # 最多2000字符 / Max 2000 characters
+                content = file_ctx.content
+                
+                if len(content) > max_len:
+                    # 显示前面和后面部分 / Show beginning and end
+                    content = (
+                        content[:1000] + 
+                        "\n\n[... 省略中间 " + str(len(content) - 2000) + " 字符 / " +
+                        str(len(content) - 2000) + " chars omitted ...]\n\n" +
+                        content[-1000:]
+                    )
+                
+                file_contents.append(f"\n**内容 / Content**:")
+                file_contents.append(f"```\n{content}\n```")
+            else:
+                file_contents.append("**内容 / Content**: (仅提供摘要，无完整内容 / Abstract only, no full content)")
+            
+            file_contents.append("\n" + "-" * 60)
+        
+        file_contents.append("\n💡 **提示 / Tip**: 你可以直接引用这些文件进行操作")
+        file_contents.append("You can reference these files directly in your operations")
+        
+        # 构建消息 / Build message
+        return {
+            "role": "system",
+            "content": "\n".join(file_contents)
+        }
     
     def get_recent_messages(self, n: int) -> List[Message]:
         """
