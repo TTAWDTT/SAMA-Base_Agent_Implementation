@@ -99,6 +99,10 @@ def interactive_mode(agent: BaseAgent) -> None:
             # 空输入跳过 / Skip empty input
             if not user_input:
                 continue
+            # 简单防护：如果用户只输入 'file' 等易触发的单词，给出提示并跳过
+            if user_input.strip().lower() in ["file", "文件"]:
+                print("⚠️  检测到可能的命令：请使用 'files' 查看文件上下文或 '/context' 切换上下文模式。示例：files 或 /context")
+                continue
             
             # 运行Agent / Run Agent
             print("\n🤔 思考中... / Thinking...\n")

@@ -15,6 +15,7 @@
 
 import json
 import time
+import concurrent.futures
 import os
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Type, Union
@@ -278,39 +279,36 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _call_llm(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """
-        调用LLM / Call LLM
-        
-        Args:
-            messages: 消息列表 / List of messages
-            
-        Returns:
-            Dict: LLM响应 / LLM response
+        调用LLM / Call LLM with enforced timeout
         """
         try:
-            response = self.client.chat.completions.create(
-                model=self.config.model.effective_model_name,
-                messages=messages,
-                tools=self._get_tools_for_api() if self.tools else None,
-                temperature=self.config.model.temperature,
-                max_tokens=self.config.model.max_tokens,
-            )
-            
-            return response
-            
+            def _call():
+                return self.client.chat.completions.create(
+                    model=self.config.model.effective_model_name,
+                    messages=messages,
+                    tools=self._get_tools_for_api() if self.tools else None,
+                    temperature=self.config.model.temperature,
+                    max_tokens=self.config.model.max_tokens,
+                )
+
+            timeout = max(5, int(self.config.model.timeout))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_call)
+                try:
+                    response = future.result(timeout=timeout + 5)
+                    return response
+                except concurrent.futures.TimeoutError:
+                    logger.error(f"LLM调用超时 / LLM call timeout after {timeout + 5}s")
+                    future.cancel()
+                    raise TimeoutError(f"LLM call timeout after {timeout + 5}s")
+
         except Exception as e:
             logger.error(f"LLM调用失败 / LLM call failed: {str(e)}")
             raise
     
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         """
-        执行工具 / Execute tool
-        
-        Args:
-            tool_name: 工具名称 / Tool name
-            arguments: 工具参数 / Tool arguments
-            
-        Returns:
-            ToolResult: 工具执行结果 / Tool execution result
+        执行工具 / Execute tool with timeout protection
         """
         if tool_name not in self.tools:
             return ToolResult(
@@ -324,9 +322,33 @@ You can create, modify and manage files in the workspace. For important intermed
         logger.info(f"执行工具 / Executing tool: {tool_name}")
         logger.debug(f"参数 / Arguments: {arguments}")
         
-        result = tool.run(**arguments)
+        # 使用线程池为工具执行设置超时，避免阻塞主循环
+        tool_timeout = getattr(self.config.tools.code_executor, 'timeout', 30)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(tool.run, **arguments)
+            try:
+                result = future.result(timeout=tool_timeout)
+            except concurrent.futures.TimeoutError:
+                logger.error(f"工具执行超时 / Tool execution timeout: {tool_name} after {tool_timeout}s")
+                future.cancel()
+                return ToolResult(
+                    tool_name=tool_name,
+                    status=ToolResultStatus.TIMEOUT,
+                    output=None,
+                    error_message=f"Tool execution timeout after {tool_timeout}s",
+                    execution_time=tool_timeout
+                )
+            except Exception as e:
+                logger.error(f"工具执行失败 / Tool execution failed: {str(e)}")
+                return ToolResult(
+                    tool_name=tool_name,
+                    status=ToolResultStatus.ERROR,
+                    output=None,
+                    error_message=str(e),
+                    execution_time=0.0
+                )
         
-        logger.info(f"工具执行完成 / Tool execution completed: {tool_name}, 状态/status: {result.status.value}")
+        logger.info(f"工具执行完成 / Tool execution completed: {tool_name}, 状态/status: {getattr(result, 'status', 'unknown')}")
         
         return result
     
@@ -345,6 +367,7 @@ You can create, modify and manage files in the workspace. For important intermed
         # Maintain mapping of tool_call_ids
         self._tool_call_ids = {}
         
+        recent_tool_calls = []
         for i, tool_call in enumerate(tool_calls):
             tool_name = tool_call.function.name
             
@@ -353,6 +376,13 @@ You can create, modify and manage files in the workspace. For important intermed
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError:
                 arguments = {}
+            
+            # 解析器保护：检查是否与最近几次调用重复
+            recent_tool_calls.append((tool_name, json.dumps(arguments, sort_keys=True)))
+            if len(recent_tool_calls) >= 3 and len(set(recent_tool_calls[-3:])) == 1:
+                logger.warning("检测到连续相同的工具调用，跳过以避免无限循环 / Detected repeated identical tool calls, skipping")
+                results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message="Skipped due to repeated identical calls"))
+                continue
             
             # 获取tool_call_id（使用LLM返回的）
             # Get tool_call_id from LLM response
@@ -366,6 +396,21 @@ You can create, modify and manage files in the workspace. For important intermed
                 call_id=call_id
             )
             
+            # 如果是文件相关工具，进行额外检查：确保目标文件在memory.files或路径存在
+            if tool_name in ("read_file", "write_file"):
+                file_path = arguments.get("file_path") or arguments.get("path") or arguments.get("file")
+                if file_path:
+                    # 优先检查内存上下文中的文件
+                    known_paths = [f.path for f in self.memory.list_files()]
+                    if file_path not in known_paths and not os.path.exists(file_path):
+                        logger.warning(f"文件工具调用使用了未知路径或不存在的文件，跳过: {file_path}")
+                        results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message=f"Unknown or missing file: {file_path}"))
+                        # 更新当前步骤
+                        if self.steps:
+                            self.steps[-1].tool_calls.append(call_record)
+                            self.steps[-1].tool_results.append(results[-1])
+                        continue
+
             # 执行工具 / Execute tool
             result = self._execute_tool(tool_name, arguments)
             results.append(result)
@@ -420,14 +465,30 @@ You can create, modify and manage files in the workspace. For important intermed
                 
                 # 调用LLM / Call LLM
                 self.state = AgentState.THINKING
-                response = self._call_llm(messages)
+                try:
+                    response = self._call_llm(messages)
+                except TimeoutError as te:
+                    logger.error(f"LLM 超时：{str(te)}")
+                    # 将错误信息反馈给用户并终止
+                    self.memory.add_assistant_message("[系统] LLM 调用超时，请稍后重试。")
+                    return AgentResponse(success=False, final_answer="LLM 调用超时，请稍后重试。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message=str(te))
+                except Exception as e:
+                    logger.error(f"LLM 调用失败：{str(e)}")
+                    self.memory.add_assistant_message(f"[系统] LLM 调用失败：{str(e)}")
+                    return AgentResponse(success=False, final_answer=f"LLM 调用失败：{str(e)}", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message=str(e))
                 
                 # 解析响应 / Parse response
+                # 保护性检查响应是否为空或格式异常
+                if not response or not hasattr(response, 'choices') or not response.choices:
+                    logger.error("LLM 响应无效或为空 / Invalid or empty LLM response")
+                    self.memory.add_assistant_message("[系统] LLM 响应无效或为空。")
+                    return AgentResponse(success=False, final_answer="LLM 响应无效或为空。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message="Invalid LLM response")
+                
                 choice = response.choices[0]
                 message = choice.message
                 
                 # 提取 thinking（Extended Thinking）/ Extract thinking
-                content = message.content or ""
+                content = getattr(message, 'content', None) or getattr(message, 'text', '') or ""
                 thinking_text = self._extract_thinking(content)
                 
                 # 如果没有 thinking 标签，使用内容前500字符作为备用 / Use first 500 chars as fallback
