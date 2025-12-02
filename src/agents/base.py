@@ -36,7 +36,7 @@ from src.core.schema import (
     ToolResultStatus,
 )
 from src.tools import DEFAULT_TOOLS, BaseTool
-from src.utils.helpers import format_tool_result, generate_request_id
+from src.utils.helpers import format_tool_result, generate_request_id, is_search_result, refine_search_result
 
 logger = get_logger("agents.base")
 
@@ -531,6 +531,14 @@ You can create, modify and manage files in the workspace. For important intermed
                         result_text = format_tool_result(result.output)
                         if result.error_message:
                             result_text = f"错误 / Error: {result.error_message}"
+                        
+                        # 对搜索结果进行精炼后再存入上下文
+                        # Refine search results before storing in context
+                        # 原始结果格式：title/url/body/button
+                        # 精炼后格式：title/url/abstract/key_content
+                        if tool_call.function.name == "web_search" and is_search_result(result_text):
+                            result_text = refine_search_result(result_text)
+                            logger.debug("搜索结果已精炼 / Search result refined for context")
 
                         # 添加工具响应消息，必须包含tool_call_id（Kimi API 要求）
                         # Add tool response message with required tool_call_id (Kimi API requirement)
