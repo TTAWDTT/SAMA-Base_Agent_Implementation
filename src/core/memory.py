@@ -8,7 +8,6 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pathlib import Path
 
 from src.core.config import get_config
 
@@ -21,19 +20,14 @@ class FileContext:
     管理Agent工作过程中涉及的文件
     Manages files involved in Agent's work process
     """
-    path: str  # 文件路径 / File path
-    content: Optional[str] = None  # 文件内容（可选，避免大文件占内存）/ File content (optional, avoid large files)
-    abstract: str = ""  # 文件摘要 / File abstract
-    timestamp: datetime = field(default_factory=datetime.now)  # 添加时间 / Added time
-    metadata: Dict[str, Any] = field(default_factory=dict)  # 额外元数据 / Extra metadata
+    path: str
+    content: Optional[str] = None
+    abstract: str = ""
+    timestamp: datetime = field(default_factory=datetime.now)
+    metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """
-        转换为字典格式 / Convert to dictionary format
-        
-        Returns:
-            Dict: 文件上下文字典 / File context dictionary
-        """
+        """转换为字典格式 / Convert to dictionary format"""
         return {
             "path": self.path,
             "content": self.content,
@@ -43,13 +37,8 @@ class FileContext:
         }
     
     def get_summary(self) -> str:
-        """
-        获取文件摘要信息 / Get file summary
-        
-        Returns:
-            str: 文件摘要 / File summary
-        """
-        size_info = f"({len(self.content)} chars)" if self.content else "(content not loaded)"
+        """获取文件摘要信息 / Get file summary"""
+        size_info = f"({len(self.content)} chars)" if self.content else "(no content)"
         return f"{self.path} {size_info}: {self.abstract}"
 
 
@@ -67,12 +56,7 @@ class Message:
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """
-        转换为字典格式 / Convert to dictionary format
-        
-        Returns:
-            Dict: 消息字典 / Message dictionary
-        """
+        """转换为字典格式 / Convert to dictionary format"""
         return {
             "role": self.role,
             "content": self.content,
@@ -80,7 +64,7 @@ class Message:
             "metadata": self.metadata
         }
     
-    def to_openai_format(self) -> Dict[str, str]:
+    def to_openai_format(self) -> Dict[str, Any]:
         """
         转换为OpenAI API格式 / Convert to OpenAI API format
         
@@ -89,23 +73,13 @@ class Message:
         """
         msg: Dict[str, Any] = {"role": self.role, "content": self.content}
 
-        # 如果是工具消息，尝试把 tool 相关元数据映射到 provider 所需的字段
-        # For tool messages, map tool-related metadata to provider-expected fields
         if self.role == "tool":
-            # 一些 providers 期望 `name` 字段表示工具名
-            if self.metadata and "tool_name" in self.metadata:
-                msg["name"] = self.metadata.get("tool_name")
-
-            # 如果存在 tool_call_id，把它注入到消息中（Kimi API 要求此字段）
-            # If tool_call_id exists, inject it into the message (Kimi API requires this field)
-            if self.metadata and "tool_call_id" in self.metadata:
-                msg["tool_call_id"] = self.metadata.get("tool_call_id")
-        
-        # 如果是助手消息且包含tool_calls，添加到消息中
-        # If assistant message with tool_calls, add them to the message
-        elif self.role == "assistant":
-            if self.metadata and "tool_calls" in self.metadata:
-                msg["tool_calls"] = self.metadata.get("tool_calls")
+            if self.metadata.get("tool_name"):
+                msg["name"] = self.metadata["tool_name"]
+            if self.metadata.get("tool_call_id"):
+                msg["tool_call_id"] = self.metadata["tool_call_id"]
+        elif self.role == "assistant" and self.metadata.get("tool_calls"):
+            msg["tool_calls"] = self.metadata["tool_calls"]
 
         return msg
 
@@ -243,60 +217,30 @@ class ConversationMemory:
         """
         构建包含文件内容的上下文消息 / Build message containing file contents
         
-        将所有文件上下文整合成一条系统消息
-        Integrate all file contexts into a single system message
-        
         Returns:
-            Optional[Dict]: 文件上下文消息，如果没有文件则返回 None
-                           File context message, or None if no files
+            Optional[Dict]: 文件上下文消息 / File context message, or None if no files
         """
         if not self.files:
             return None
         
-        # 构建文件内容文本 / Build file content text
-        file_contents = []
-        file_contents.append("## 📁 当前文件上下文 / Current File Context\n")
-        file_contents.append(f"共有 {len(self.files)} 个文件在上下文中 / {len(self.files)} files in context\n")
+        file_contents = [
+            "## 📁 当前文件上下文 / Current File Context\n",
+            f"共有 {len(self.files)} 个文件 / {len(self.files)} files in context\n"
+        ]
         
         for path, file_ctx in self.files.items():
-            file_contents.append(f"\n### 文件 / File: `{path}`")
-            file_contents.append(f"**摘要 / Abstract**: {file_ctx.abstract}")
-            file_contents.append(f"**更新时间 / Updated**: {file_ctx.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
+            file_contents.append(f"\n### `{path}`")
+            file_contents.append(f"**摘要**: {file_ctx.abstract}")
             
-            # 如果有元数据，显示元数据 / If metadata exists, show it
-            if file_ctx.metadata:
-                file_contents.append(f"**元数据 / Metadata**: {file_ctx.metadata}")
-            
-            # 如果有内容，显示内容 / If content exists, show it
             if file_ctx.content:
-                # 限制内容长度，避免上下文过长 / Limit content length to avoid context overflow
-                max_len = 2000  # 最多2000字符 / Max 2000 characters
                 content = file_ctx.content
-                
-                if len(content) > max_len:
-                    # 显示前面和后面部分 / Show beginning and end
-                    content = (
-                        content[:1000] + 
-                        "\n\n[... 省略中间 " + str(len(content) - 2000) + " 字符 / " +
-                        str(len(content) - 2000) + " chars omitted ...]\n\n" +
-                        content[-1000:]
-                    )
-                
-                file_contents.append(f"\n**内容 / Content**:")
+                if len(content) > 2000:
+                    content = content[:1000] + f"\n[... 省略 {len(content) - 2000} 字符 ...]\n" + content[-1000:]
                 file_contents.append(f"```\n{content}\n```")
-            else:
-                file_contents.append("**内容 / Content**: (仅提供摘要，无完整内容 / Abstract only, no full content)")
             
-            file_contents.append("\n" + "-" * 60)
+            file_contents.append("-" * 40)
         
-        file_contents.append("\n💡 **提示 / Tip**: 你可以直接引用这些文件进行操作")
-        file_contents.append("You can reference these files directly in your operations")
-        
-        # 构建消息 / Build message
-        return {
-            "role": "system",
-            "content": "\n".join(file_contents)
-        }
+        return {"role": "system", "content": "\n".join(file_contents)}
     
     def get_recent_messages(self, n: int) -> List[Message]:
         """

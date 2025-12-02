@@ -13,12 +13,14 @@ from loguru import logger
 
 from src.core.config import get_config
 
+# 标记是否已初始化 / Flag for initialization status
+_initialized = False
+
 
 def setup_logger(
     log_level: Optional[str] = None,
     log_file: Optional[str] = None,
-    console_output: Optional[bool] = None,
-    log_format: Optional[str] = None
+    console_output: Optional[bool] = None
 ) -> None:
     """
     设置日志记录器 / Setup logger
@@ -30,7 +32,6 @@ def setup_logger(
         log_level: 日志级别 / Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
         log_file: 日志文件路径 / Log file path
         console_output: 是否输出到控制台 / Whether to output to console
-        log_format: 日志格式 / Log format
     """
     config = get_config()
     
@@ -38,12 +39,11 @@ def setup_logger(
     level = log_level or config.logging.level
     file_path = log_file or config.logging.file_path
     to_console = console_output if console_output is not None else config.logging.console_output
-    fmt = log_format or config.logging.format
     
     # 移除默认处理器 / Remove default handlers
     logger.remove()
     
-    # Loguru格式转换 / Convert to Loguru format
+    # Loguru格式 / Loguru format
     loguru_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -62,7 +62,6 @@ def setup_logger(
     
     # 添加文件处理器 / Add file handler
     if file_path:
-        # 确保日志目录存在 / Ensure log directory exists
         log_path = Path(file_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         
@@ -70,9 +69,9 @@ def setup_logger(
             file_path,
             format=loguru_format,
             level=level,
-            rotation="10 MB",  # 日志轮转 / Log rotation
-            retention="7 days",  # 保留天数 / Retention days
-            compression="zip",  # 压缩格式 / Compression format
+            rotation="10 MB",
+            retention="7 days",
+            compression="zip",
             encoding="utf-8"
         )
 
@@ -92,44 +91,15 @@ def get_logger(name: Optional[str] = None):
     return logger
 
 
-# 便捷函数 / Convenience functions
-def debug(message: str, *args, **kwargs):
-    """记录调试信息 / Log debug message"""
-    logger.debug(message, *args, **kwargs)
-
-
-def info(message: str, *args, **kwargs):
-    """记录信息 / Log info message"""
-    logger.info(message, *args, **kwargs)
-
-
-def warning(message: str, *args, **kwargs):
-    """记录警告 / Log warning message"""
-    logger.warning(message, *args, **kwargs)
-
-
-def error(message: str, *args, **kwargs):
-    """记录错误 / Log error message"""
-    logger.error(message, *args, **kwargs)
-
-
-def critical(message: str, *args, **kwargs):
-    """记录严重错误 / Log critical message"""
-    logger.critical(message, *args, **kwargs)
-
-
-def exception(message: str, *args, **kwargs):
-    """记录异常（包含堆栈跟踪）/ Log exception (with stack trace)"""
-    logger.exception(message, *args, **kwargs)
-
-
-# 初始化日志系统 / Initialize logging system
-def init_logging():
+def init_logging() -> None:
     """
     初始化日志系统 / Initialize logging system
     
-    在应用启动时调用此函数
-    Call this function at application startup
+    在应用启动时调用此函数，只会初始化一次
+    Call this function at application startup, will only initialize once
     """
-    setup_logger()
-    logger.info("日志系统初始化完成 / Logging system initialized")
+    global _initialized
+    if not _initialized:
+        setup_logger()
+        logger.info("日志系统初始化完成 / Logging system initialized")
+        _initialized = True

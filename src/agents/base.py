@@ -15,10 +15,11 @@
 
 import json
 import time
-import concurrent.futures
+import re
 import os
+import concurrent.futures
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 from openai import OpenAI
 
@@ -35,11 +36,7 @@ from src.core.schema import (
     ToolResultStatus,
 )
 from src.tools import DEFAULT_TOOLS, BaseTool
-from src.utils.helpers import (
-    format_tool_result,
-    generate_request_id,
-    estimate_tokens,
-)
+from src.utils.helpers import format_tool_result, generate_request_id
 
 logger = get_logger("agents.base")
 
@@ -179,16 +176,11 @@ You can create, modify and manage files in the workspace. For important intermed
         Returns:
             Optional[str]: 思考内容，如果没有则返回 None / Thinking content, None if not found
         """
-        import re
-        
-        # 使用正则表达式提取 <thinking>...</thinking> 之间的内容
-        # Use regex to extract content between <thinking>...</thinking>
         pattern = r'<thinking>(.*?)</thinking>'
         match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
         
         if match:
-            thinking_text = match.group(1).strip()
-            return thinking_text
+            return match.group(1).strip()
         
         return None
     
@@ -815,7 +807,7 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _print_current_context(self, messages: List[Dict]) -> None:
         """
-        打印当前传入LLM的上下文（改进版）/ Print current context sent to LLM (improved)
+        打印当前传入LLM的上下文 / Print current context sent to LLM
         
         Args:
             messages: 消息列表 / Message list
@@ -828,7 +820,6 @@ You can create, modify and manage files in the workspace. For important intermed
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
             
-            # 根据角色使用不同的图标和标签 / Different icons for different roles
             role_display = {
                 "system": "⚙️  系统 / System",
                 "user": "👤 用户 / User",
@@ -839,69 +830,24 @@ You can create, modify and manage files in the workspace. For important intermed
             print(f"\n[{i}] {role_display}")
             print("-" * 80)
             
-            # 根据角色和内容决定显示方式 / Display differently based on role and content
-            if role == "system":
-                # 系统消息：检查是否是文件上下文 / System message: check if it's file context
-                if "📁 当前文件上下文" in content:
-                    print("📁 文件上下文消息 / File Context Message")
-                    print("-" * 80)
-                    # 显示文件列表，不显示完整内容 / Show file list, not full content
-                    lines = content.split('\n')
-                    for line in lines:
-                        if line.startswith("###") or line.startswith("**") or "共有" in line:
-                            print(f"  {line}")
-                    print(f"\n  💡 包含 {content.count('###')} 个文件的详细信息")
-                    print(f"     Contains detailed info of {content.count('###')} files")
-                else:
-                    # 普通系统消息，只显示摘要 / Normal system message, show summary only
-                    print(f"📊 内容长度: {len(content)} 字符 / {len(content)} characters")
-                    print(f"📝 预览 / Preview:")
-                    print(f"   {content[:200]}...")
-                    if len(content) > 200:
-                        print(f"   ... (还有 {len(content) - 200} 字符 / {len(content) - 200} more chars)")
-            
+            # 根据内容长度决定显示方式 / Display based on content length
+            if role == "system" and "📁 当前文件上下文" in content:
+                print(f"📁 文件上下文消息 ({content.count('###')} 个文件)")
             elif len(content) > 500:
-                # 内容过长，显示首尾部分 / Content too long, show head and tail
-                print(f"📊 内容长度: {len(content)} 字符 / {len(content)} characters")
-                print(f"\n📝 开头部分 / Beginning:")
-                print(content[:250])
-                print(f"\n⋯⋯⋯ [省略 {len(content) - 500} 字符 / {len(content) - 500} chars omitted] ⋯⋯⋯")
-                print(f"\n📝 结尾部分 / Ending:")
-                print(content[-250:])
+                print(f"📊 内容长度: {len(content)} 字符")
+                print(f"📝 预览: {content[:200]}...")
             else:
-                # 内容适中，完整显示 / Moderate content, show fully
                 print(content)
             
-            # 如果有工具调用，显示工具信息 / If tool calls exist, show tool info
+            # 显示工具调用信息 / Show tool call info
             if "tool_calls" in msg:
-                print(f"\n🔧 工具调用 / Tool Calls: {len(msg['tool_calls'])} 个")
                 for tc in msg['tool_calls']:
-                    func_name = tc.get('function', {}).get('name', 'unknown')
-                    args_str = tc.get('function', {}).get('arguments', '')
-                    print(f"   • {func_name}")
-                    if len(args_str) < 100:
-                        print(f"     参数 / Args: {args_str}")
+                    print(f"   🔧 {tc.get('function', {}).get('name', 'unknown')}")
             
-            # 如果是工具消息，显示工具名称 / If tool message, show tool name
             if role == "tool" and "name" in msg:
-                print(f"🏷️  工具名称 / Tool Name: {msg['name']}")
+                print(f"🏷️  工具: {msg['name']}")
         
         # 统计信息 / Statistics
-        print("\n" + "="*80)
-        print("📊 统计信息 / Statistics")
-        print("="*80)
-        
         total_chars = sum(len(msg.get("content", "")) for msg in messages)
-        system_count = sum(1 for msg in messages if msg.get("role") == "system")
-        user_count = sum(1 for msg in messages if msg.get("role") == "user")
-        assistant_count = sum(1 for msg in messages if msg.get("role") == "assistant")
-        tool_count = sum(1 for msg in messages if msg.get("role") == "tool")
-        
-        print(f"📨 消息总数 / Total messages: {len(messages)}")
-        print(f"   ⚙️  系统消息 / System: {system_count}")
-        print(f"   👤 用户消息 / User: {user_count}")
-        print(f"   🤖 助手消息 / Assistant: {assistant_count}")
-        print(f"   🔧 工具消息 / Tool: {tool_count}")
-        print(f"📝 总字符数 / Total characters: {total_chars:,}")
-        print(f"🎯 估计token数 / Estimated tokens: ~{total_chars // 4:,}")
+        print(f"\n📊 消息: {len(messages)} | 字符: {total_chars:,} | Token估计: ~{total_chars // 4:,}")
         print("="*80 + "\n")
