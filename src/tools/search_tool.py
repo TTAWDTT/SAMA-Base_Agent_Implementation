@@ -183,10 +183,9 @@ class WebSearchTool(BaseTool):
             str: JSON格式搜索结果 / Search results in JSON format
         """
         try:
-            from duckduckgo_search import DDGS
+            from duckduckgo_search import ddgs
             
-            with DDGS() as ddgs:
-                raw_results = list(ddgs.text(query, max_results=max_results))
+            raw_results = list(ddgs.text(query, max_results=max_results))
             
             if not raw_results:
                 return json.dumps({

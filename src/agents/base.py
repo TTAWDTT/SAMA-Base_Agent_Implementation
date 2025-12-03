@@ -144,7 +144,7 @@ class BaseAgent:
 
 **工作区路径 / Workspace Path**: `{self.workspace}`
 
-你可以在工作区中创建、修改和管理文件。对于重要的中间文件（如生成的脚本、数据文件等），你应该：
+你可以在工作区中创建、修改和管理文件。对于重要的中间文件（如生成的脚本、数据文件、搜索结果等），你应该：
 You can create, modify and manage files in the workspace. For important intermediate files (e.g., generated scripts, data files), you should:
 
 1. **将文件保存到工作区** / Save files to workspace
@@ -369,13 +369,6 @@ You can create, modify and manage files in the workspace. For important intermed
             except json.JSONDecodeError:
                 arguments = {}
             
-            # 解析器保护：检查是否与最近几次调用重复
-            recent_tool_calls.append((tool_name, json.dumps(arguments, sort_keys=True)))
-            if len(recent_tool_calls) >= 3 and len(set(recent_tool_calls[-3:])) == 1:
-                logger.warning("检测到连续相同的工具调用，跳过以避免无限循环 / Detected repeated identical tool calls, skipping")
-                results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message="Skipped due to repeated identical calls"))
-                continue
-            
             # 获取tool_call_id（使用LLM返回的）
             # Get tool_call_id from LLM response
             call_id = getattr(tool_call, "id", None) or f"call_{tool_name}_{i}"
@@ -482,10 +475,6 @@ You can create, modify and manage files in the workspace. For important intermed
                 # 提取 thinking（Extended Thinking）/ Extract thinking
                 content = getattr(message, 'content', None) or getattr(message, 'text', '') or ""
                 thinking_text = self._extract_thinking(content)
-                
-                # 如果没有 thinking 标签，使用内容前500字符作为备用 / Use first 500 chars as fallback
-                if not thinking_text:
-                    thinking_text = content[:500] if content else ""
                 
                 # 创建步骤记录 / Create step record
                 step = AgentStep(
