@@ -76,6 +76,24 @@ class AgentConfig(BaseModel):
     )
 
 
+class ShellToolConfig(BaseModel):
+    """Shell工具配置 / Shell Tool Configuration"""
+    enabled: bool = Field(default=True, description="是否启用 / Enabled")
+    policy: str = Field(
+        default="whitelist",
+        description="安全策略（allow_all/deny_all/whitelist）/ Security policy"
+    )
+    whitelist: List[str] = Field(
+        default=["echo", "ls", "dir", "cat", "type", "pwd", "cd", "head", "tail", "grep", "find", "where", "which", "python", "pip", "node", "npm", "git"],
+        description="白名单命令前缀 / Whitelist command prefixes"
+    )
+    timeout: int = Field(
+        default=30,
+        gt=0,
+        description="执行超时（秒）/ Execution timeout (seconds)"
+    )
+
+
 class FileToolConfig(BaseModel):
     """文件工具配置 / File Tool Configuration"""
     enabled: bool = Field(default=True, description="是否启用 / Enabled")
@@ -108,6 +126,7 @@ class SearchToolConfig(BaseModel):
 
 class ToolsConfig(BaseModel):
     """工具配置 / Tools Configuration"""
+    shell_tool: ShellToolConfig = Field(default_factory=ShellToolConfig)
     file_tool: FileToolConfig = Field(default_factory=FileToolConfig)
     code_executor: CodeExecutorConfig = Field(default_factory=CodeExecutorConfig)
     search_tool: SearchToolConfig = Field(default_factory=SearchToolConfig)

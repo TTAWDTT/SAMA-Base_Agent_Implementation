@@ -49,6 +49,39 @@ agent:
 
 # 工具配置 / Tools Configuration
 tools:
+  # Shell命令工具 / Shell command tool
+  shell_tool:
+    enabled: true
+    # 安全策略 / Security policy
+    # allow_all: 允许所有命令（危险）/ Allow all commands (dangerous)
+    # deny_all: 禁止所有命令 / Deny all commands
+    # whitelist: 只允许白名单命令 / Only allow whitelisted commands
+    policy: whitelist
+    # 白名单命令前缀 / Whitelist command prefixes
+    whitelist:
+      - "echo"
+      - "ls"
+      - "dir"
+      - "cat"
+      - "type"
+      - "pwd"
+      - "cd"
+      - "head"
+      - "tail"
+      - "grep"
+      - "find"
+      - "where"
+      - "which"
+      - "python"
+      - "pip"
+      - "node"
+      - "npm"
+      - "git"
+      - "curl"
+      - "wget"
+    # 执行超时（秒）/ Execution timeout (seconds)
+    timeout: 30
+  
   # 文件操作工具 / File operation tool
   file_tool:
     enabled: true
@@ -61,13 +94,12 @@ tools:
       - "./docs"
       - "./scripts"
   
-  # 代码执行工具 / Code execution tool
+  # Python代码执行工具 / Python code execution tool
   code_executor:
     enabled: true
     # 允许的编程语言 / Allowed programming languages
     allowed_languages:
       - "python"
-      - "javascript"
     # 执行超时（秒）/ Execution timeout (seconds)
     timeout: 30
   
