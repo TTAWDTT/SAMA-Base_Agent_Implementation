@@ -1,13 +1,10 @@
 # ==============================================================================
 # AI Agent 配置文件 / AI Agent Configuration File
 # ==============================================================================
-# 请将此文件复制为 config.local.yaml 并填入您的实际 API 密钥
-# Please copy this file to config.local.yaml and fill in your actual API keys
-# ==============================================================================
 
 # 模型配置 / Model Configuration
 model:
-  # API密钥 / API Key (请替换为您的实际密钥 / Please replace with your actual key)
+  # API密钥 / API Key 
   api_key: 9a11d204-c61c-4931-b5e7-e1760f297e6f
   
   # API基础URL / API Base URL
@@ -20,13 +17,13 @@ model:
   sub_model_name: ep-20251101221159-hhmrg    # Kimi K2
   
 # 温度参数 / Temperature (0.0 - 1.0)
-  temperature: 0.7
+  temperature: 0.7 
   
   # 最大token数 / Maximum tokens
-  max_tokens: 4096
+  max_tokens: 262144
   
   # 请求超时（秒）/ Request timeout (seconds)
-  timeout: 120
+  timeout: 240
 
 # Agent配置 / Agent Configuration
 agent:
@@ -93,6 +90,7 @@ tools:
       - "./src"
       - "./docs"
       - "./scripts"
+      - "./dataset"
   
   # Python代码执行工具 / Python code execution tool
   code_executor:
@@ -137,3 +135,14 @@ memory:
   # buffer: 简单缓冲, summary: 摘要记忆
   # buffer: simple buffer, summary: summary memory
   type: "buffer"
+
+# 路径配置 / Path Configuration
+paths:
+  # 数据集路径 / Dataset path
+  dataset: "dataset/data/train-00000-of-00001.parquet"
+  
+  # 临时文件目录 / Temporary files directory
+  temp: "./workspace/temp"
+  
+  # 输出目录 / Output directory
+  output: "./outputs"
