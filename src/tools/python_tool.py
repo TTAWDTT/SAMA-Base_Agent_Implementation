@@ -43,48 +43,202 @@ class PythonTool(BaseTool):
     """
     Python代码执行工具 / Python Code Execution Tool
     
-    执行Python代码并返回结果
-    Executes Python code and returns results
+    ## 基本描述
     
-    使用方式 / Usage:
-    1. 直接执行代码：传入code参数
-    2. 保存并执行：传入code和save_to参数
-    3. 执行文件：传入run_file参数
-    4. REPL模式：设置persistent=True保持变量状态
+    执行Python代码并返回结果。支持直接执行代码片段、保存代码到文件、
+    执行现有Python文件，以及REPL模式（保持变量状态）。
     
-    ⚠️ 安全警告 / Security Warning:
-    此工具允许执行任意Python代码。
-    This tool allows arbitrary Python code execution.
+    Executes Python code and returns results. Supports direct code execution,
+    saving code to files, running existing Python files, and REPL mode (maintaining variable state).
+    
+    ## 使用步骤
+    
+    ### 直接执行代码
+    1. 提供 code 参数，包含要执行的Python代码
+    2. 可选设置 timeout 超时时间
+    3. 代码在独立子进程中执行，输出自动捕获
+    
+    ### 保存并执行
+    1. 提供 code 参数和 save_to 参数
+    2. 代码先保存到指定文件，然后执行
+    
+    ### 执行现有文件
+    1. 提供 run_file 参数指定Python文件路径
+    2. 不需要提供 code 参数
+    
+    ### REPL模式
+    1. 设置 persistent=true
+    2. 多次调用之间变量状态会保持
+    3. 适合交互式探索和调试
+    
+    ## 使用说明
+    
+    - **code** (与run_file二选一): 要执行的Python代码字符串
+    - **timeout** (可选): 执行超时秒数，默认30秒
+    - **save_to** (可选): 保存代码的文件路径
+    - **run_file** (可选): 要执行的Python文件路径，与code互斥
+    - **persistent** (可选): 是否使用REPL模式保持变量状态，默认false
+    
+    ### 注意事项
+    
+    - 代码在子进程中执行，与主程序隔离
+    - REPL模式下变量会在调用之间保持
+    - 执行任意代码是此工具的设计用途，请在受信环境使用
+    
+    ## 示例
+    
+    ### 示例1：执行简单代码
+    ```json
+    {
+        "code": "print('Hello, World!')"
+    }
+    ```
+    
+    ### 示例2：执行计算代码
+    ```json
+    {
+        "code": "import math\\nresult = math.sqrt(144)\\nprint(f'平方根: {result}')"
+    }
+    ```
+    
+    ### 示例3：带超时的长时间计算
+    ```json
+    {
+        "code": "import time\\nfor i in range(5):\\n    print(f'Step {i}')\\n    time.sleep(1)",
+        "timeout": 60
+    }
+    ```
+    
+    ### 示例4：保存并执行代码
+    ```json
+    {
+        "code": "def greet(name):\\n    return f'Hello, {name}!'\\n\\nprint(greet('User'))",
+        "save_to": "C:\\\\project\\\\scripts\\\\greet.py"
+    }
+    ```
+    
+    ### 示例5：执行现有文件
+    ```json
+    {
+        "run_file": "C:\\\\project\\\\scripts\\\\main.py",
+        "timeout": 120
+    }
+    ```
+    
+    ### 示例6：REPL模式（保持状态）
+    ```json
+    {
+        "code": "x = 10\\ny = 20",
+        "persistent": true
+    }
+    ```
+    后续调用：
+    ```json
+    {
+        "code": "print(x + y)",
+        "persistent": true
+    }
+    ```
+    输出：30（因为x和y在上次调用中定义）
     """
     
     name: str = "python"
-    description: str = """Python代码执行工具。参数：
-- code: 要执行的Python代码
-- timeout: 执行超时秒数（默认30）
-- save_to: 保存代码到文件路径（可选）
-- run_file: 执行指定Python文件（可选，与code互斥）
-- persistent: 是否使用REPL模式保持变量状态（默认false）
+    
+    description: str = """Python代码执行工具，执行Python代码并返回结果。
 
-Python code execution tool. Parameters:
-- code: Python code to execute
-- timeout: Execution timeout in seconds (default 30)
-- save_to: Save code to file path (optional)
-- run_file: Run specified Python file (optional, mutually exclusive with code)
-- persistent: Use REPL mode to maintain variable state (default false)"""
+## 基本描述
+
+执行Python代码并返回结果。支持直接执行代码片段、保存代码到文件、执行现有Python文件，以及REPL模式。
+
+## 使用步骤
+
+### 直接执行代码
+1. 提供 code 参数
+2. 可选设置 timeout 超时时间
+3. 代码在独立子进程中执行
+
+### 保存并执行
+1. 提供 code 和 save_to 参数
+2. 代码先保存到文件，然后执行
+
+### 执行现有文件
+1. 提供 run_file 参数
+2. 不需要 code 参数
+
+### REPL模式
+1. 设置 persistent=true
+2. 变量状态会在调用之间保持
+
+## 使用说明
+
+- **code** (与run_file二选一): 要执行的Python代码
+- **timeout** (可选): 超时秒数，默认30秒
+- **save_to** (可选): 保存代码的文件路径
+- **run_file** (可选): 要执行的Python文件路径
+- **persistent** (可选): 是否使用REPL模式，默认false
+
+## 示例
+
+执行代码：{"code": "print('Hello')"}
+带超时：{"code": "long_running_code()", "timeout": 120}
+保存执行：{"code": "print('test')", "save_to": "test.py"}
+执行文件：{"run_file": "main.py"}
+REPL模式：{"code": "x = 10", "persistent": true}
+"""
     
-    description_zh: str = """Python代码执行工具。参数：
-- code: 要执行的Python代码
-- timeout: 执行超时秒数（默认30）
-- save_to: 保存代码到文件路径（可选）
-- run_file: 执行指定Python文件（可选，与code互斥）
-- persistent: 是否使用REPL模式保持变量状态（默认false）"""
+    description_zh: str = """Python代码执行工具，执行Python代码并返回结果。
+
+## 基本描述
+
+执行Python代码并返回结果。支持直接执行、保存执行、执行文件、REPL模式。
+
+## 使用步骤
+
+1. 选择执行方式：直接执行、保存执行、执行文件、REPL模式
+2. 提供必要参数：code或run_file
+3. 设置可选参数：timeout、save_to、persistent
+
+## 使用说明
+
+- **code** (与run_file二选一): 要执行的Python代码
+- **timeout** (可选): 超时秒数，默认30秒
+- **save_to** (可选): 保存代码的文件路径
+- **run_file** (可选): 要执行的Python文件路径
+- **persistent** (可选): 是否使用REPL模式，默认false
+
+## 示例
+
+{"code": "print('Hello')", "timeout": 30}
+{"code": "x = 10", "persistent": true}
+{"run_file": "main.py"}
+"""
     
-    description_en: str = """Python code execution tool. Parameters:
-- code: Python code to execute
-- timeout: Execution timeout in seconds (default 30)
-- save_to: Save code to file path (optional)
-- run_file: Run specified Python file (optional, mutually exclusive with code)
-- persistent: Use REPL mode to maintain variable state (default false)"""
+    description_en: str = """Python code execution tool that executes Python code and returns results.
+
+## Basic Description
+
+Executes Python code and returns results. Supports direct execution, save and execute, run file, and REPL mode.
+
+## Usage Steps
+
+1. Choose execution method: direct, save and execute, run file, or REPL
+2. Provide required parameters: code or run_file
+3. Set optional parameters: timeout, save_to, persistent
+
+## Usage Instructions
+
+- **code** (either code or run_file): Python code to execute
+- **timeout** (optional): Timeout in seconds, default 30
+- **save_to** (optional): Path to save code to
+- **run_file** (optional): Python file to execute
+- **persistent** (optional): Use REPL mode, default false
+
+## Examples
+
+{"code": "print('Hello')", "timeout": 30}
+{"code": "x = 10", "persistent": true}
+{"run_file": "main.py"}
+"""
     
     input_schema = PythonInput
     

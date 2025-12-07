@@ -45,55 +45,210 @@ class FileTool(BaseTool):
     """
     统一文件操作工具 / Unified File Operation Tool
     
-    提供文件读取、写入、目录列表功能
-    Provides file read, write, and directory listing functionality
+    ## 基本描述
     
-    操作类型 / Operation Types:
-    - read: 读取文件内容 / Read file content
-    - write: 写入文件内容 / Write file content
-    - list: 列出目录内容 / List directory content
+    提供文件读取、写入、目录列表功能的统一工具。
+    支持自动创建目录、文件备份、追加写入等高级功能。
+    
+    Provides unified file read, write, and directory listing functionality.
+    Supports auto-creating directories, file backup, append writing and other advanced features.
+    
+    ## 使用步骤
+    
+    ### 读取文件 (read)
+    1. 设置 operation 为 "read"
+    2. 提供文件路径 path
+    3. 可选指定编码 encoding
+    
+    ### 写入文件 (write)
+    1. 设置 operation 为 "write"
+    2. 提供文件路径 path 和内容 content
+    3. 可选设置追加模式 append、备份 backup、自动创建目录 create_dirs
+    
+    ### 列出目录 (list)
+    1. 设置 operation 为 "list"
+    2. 提供目录路径 path
+    3. 可选设置递归列出 recursive
+    
+    ## 使用说明
+    
+    - **operation** (必填): 操作类型，可选值 read/write/list
+    - **path** (必填): 文件或目录的路径
+    - **content** (write操作必填): 要写入的文件内容
+    - **encoding** (可选): 文件编码，默认 utf-8
+    - **append** (可选): 是否追加模式，默认 false
+    - **recursive** (可选): 是否递归列出目录，默认 false
+    - **backup** (可选): 写入前是否备份原文件，默认 false
+    - **create_dirs** (可选): 是否自动创建父目录，默认 true
+    
+    ### 安全说明
+    
+    - 仅允许访问配置中指定的目录
+    - 路径会自动规范化处理
+    
+    ## 示例
+    
+    ### 示例1：读取文件
+    ```json
+    {
+        "operation": "read",
+        "path": "C:\\\\project\\\\readme.md",
+        "encoding": "utf-8"
+    }
+    ```
+    
+    ### 示例2：写入文件（自动创建目录）
+    ```json
+    {
+        "operation": "write",
+        "path": "C:\\\\project\\\\docs\\\\guide.md",
+        "content": "# 使用指南\\n\\n这是内容...",
+        "create_dirs": true
+    }
+    ```
+    
+    ### 示例3：追加内容到文件
+    ```json
+    {
+        "operation": "write",
+        "path": "C:\\\\project\\\\log.txt",
+        "content": "新的日志条目\\n",
+        "append": true
+    }
+    ```
+    
+    ### 示例4：备份后写入
+    ```json
+    {
+        "operation": "write",
+        "path": "C:\\\\project\\\\config.yaml",
+        "content": "new: config",
+        "backup": true
+    }
+    ```
+    
+    ### 示例5：列出目录
+    ```json
+    {
+        "operation": "list",
+        "path": "C:\\\\project",
+        "recursive": false
+    }
+    ```
+    
+    ### 示例6：递归列出目录
+    ```json
+    {
+        "operation": "list",
+        "path": "C:\\\\project\\\\src",
+        "recursive": true
+    }
+    ```
     """
     
     name: str = "file"
-    description: str = """文件操作工具，支持读取、写入、列目录。参数：
-- operation: 操作类型（read/write/list）
-- path: 文件或目录路径
-- content: 写入内容（write操作必需）
-- encoding: 文件编码（默认utf-8）
-- append: 是否追加模式（默认false）
-- recursive: 是否递归列出（list操作）
-- backup: 写入前是否备份（默认false）
-- create_dirs: 是否自动创建目录（默认true）
+    
+    description: str = """文件操作工具，支持读取、写入、列目录。
 
-File operation tool, supports read/write/list. Parameters:
-- operation: Operation type (read/write/list)
-- path: File or directory path
-- content: Content to write (required for write)
-- encoding: File encoding (default utf-8)
-- append: Append mode (default false)
-- recursive: Recursive listing (for list operation)
-- backup: Backup before write (default false)
-- create_dirs: Auto-create directories (default true)"""
+## 基本描述
+
+提供文件读取、写入、目录列表功能的统一工具。支持自动创建目录、文件备份、追加写入等。
+
+## 使用步骤
+
+### 读取文件 (read)
+1. 设置 operation 为 "read"
+2. 提供文件路径 path
+3. 可选指定编码 encoding
+
+### 写入文件 (write)
+1. 设置 operation 为 "write"
+2. 提供文件路径 path 和内容 content
+3. 可选设置追加模式 append、备份 backup、自动创建目录 create_dirs
+
+### 列出目录 (list)
+1. 设置 operation 为 "list"
+2. 提供目录路径 path
+3. 可选设置递归列出 recursive
+
+## 使用说明
+
+- **operation** (必填): 操作类型（read/write/list）
+- **path** (必填): 文件或目录路径
+- **content** (write操作必填): 写入内容
+- **encoding** (可选): 文件编码，默认utf-8
+- **append** (可选): 是否追加模式，默认false
+- **recursive** (可选): 是否递归列出，默认false
+- **backup** (可选): 写入前是否备份，默认false
+- **create_dirs** (可选): 是否自动创建目录，默认true
+
+## 示例
+
+读取文件：{"operation": "read", "path": "readme.md"}
+写入文件：{"operation": "write", "path": "output.txt", "content": "内容"}
+追加写入：{"operation": "write", "path": "log.txt", "content": "日志", "append": true}
+列出目录：{"operation": "list", "path": "./src", "recursive": true}
+"""
     
-    description_zh: str = """文件操作工具，支持读取、写入、列目录。参数：
-- operation: 操作类型（read/write/list）
-- path: 文件或目录路径
-- content: 写入内容（write操作必需）
-- encoding: 文件编码（默认utf-8）
-- append: 是否追加模式（默认false）
-- recursive: 是否递归列出（list操作）
-- backup: 写入前是否备份（默认false）
-- create_dirs: 是否自动创建目录（默认true）"""
+    description_zh: str = """文件操作工具，支持读取、写入、列目录。
+
+## 基本描述
+
+提供文件读取、写入、目录列表功能的统一工具。
+
+## 使用步骤
+
+1. 选择操作类型：read（读取）、write（写入）、list（列目录）
+2. 提供必要参数：path（路径），write操作需要content（内容）
+3. 设置可选参数：encoding、append、backup、create_dirs、recursive
+
+## 使用说明
+
+- **operation** (必填): 操作类型（read/write/list）
+- **path** (必填): 文件或目录路径
+- **content** (write操作必填): 写入内容
+- **encoding** (可选): 文件编码，默认utf-8
+- **append** (可选): 追加模式，默认false
+- **recursive** (可选): 递归列出，默认false
+- **backup** (可选): 写入前备份，默认false
+- **create_dirs** (可选): 自动创建目录，默认true
+
+## 示例
+
+{"operation": "read", "path": "readme.md"}
+{"operation": "write", "path": "out.txt", "content": "内容", "append": true}
+{"operation": "list", "path": "./src", "recursive": true}
+"""
     
-    description_en: str = """File operation tool, supports read/write/list. Parameters:
-- operation: Operation type (read/write/list)
-- path: File or directory path
-- content: Content to write (required for write)
-- encoding: File encoding (default utf-8)
-- append: Append mode (default false)
-- recursive: Recursive listing (for list operation)
-- backup: Backup before write (default false)
-- create_dirs: Auto-create directories (default true)"""
+    description_en: str = """File operation tool supporting read, write, and list operations.
+
+## Basic Description
+
+Unified tool for file read, write, and directory listing. Supports auto-creating directories, backup, append mode.
+
+## Usage Steps
+
+1. Choose operation type: read, write, or list
+2. Provide required parameters: path, content (for write)
+3. Set optional parameters: encoding, append, backup, create_dirs, recursive
+
+## Usage Instructions
+
+- **operation** (required): Operation type (read/write/list)
+- **path** (required): File or directory path
+- **content** (required for write): Content to write
+- **encoding** (optional): File encoding, default utf-8
+- **append** (optional): Append mode, default false
+- **recursive** (optional): Recursive listing, default false
+- **backup** (optional): Backup before write, default false
+- **create_dirs** (optional): Auto-create directories, default true
+
+## Examples
+
+{"operation": "read", "path": "readme.md"}
+{"operation": "write", "path": "out.txt", "content": "content", "append": true}
+{"operation": "list", "path": "./src", "recursive": true}
+"""
     
     input_schema = FileInput
     

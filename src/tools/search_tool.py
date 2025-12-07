@@ -36,26 +36,149 @@ class WebSearchTool(BaseTool):
     """
     网络搜索工具 / Web Search Tool
     
-    执行网络搜索并返回结构化结果，主搜索引擎为Tavily，备用为DuckDuckGo
-    Performs web search and returns structured results, primary engine is Tavily, fallback is DuckDuckGo
+    ## 基本描述
     
-    返回字段 / Return Fields:
-    - title: 搜索结果标题 / Search result title
-    - url: 结果链接 / Result URL  
-    - body: 内容摘要 / Content summary
-    - button: 进一步搜索建议 / Suggested further search queries
+    执行网络搜索并返回结构化结果。主搜索引擎为Tavily，备用为DuckDuckGo。
+    当Tavily API不可用时自动回退到DuckDuckGo。
     
-    LLM处理后应提取 / LLM should extract:
+    Performs web search and returns structured results. Primary engine is Tavily, 
+    fallback is DuckDuckGo. Automatically falls back when Tavily API is unavailable.
+    
+    ## 使用步骤
+    
+    1. **构造查询**：准备搜索关键词或问题
+    2. **设置参数**：配置最大结果数（可选）
+    3. **执行搜索**：调用工具进行搜索
+    4. **解析结果**：从返回的JSON中提取所需信息
+    
+    ## 使用说明
+    
+    - **query** (必填): 搜索查询字符串
+    - **max_results** (可选): 最大结果数，默认5，最大10
+    
+    ### 返回字段
+    
+    - **title**: 搜索结果标题
+    - **url**: 结果链接
+    - **body**: 内容摘要
+    - **button**: 进一步搜索建议
+    
+    ### LLM处理建议
+    
+    处理搜索结果时，建议提取以下字段：
     - title: 标题
     - url: 链接
     - abstract: 精炼摘要
-    - key_content: 任务相关关键内容（button、相关资源url等）
+    - key_content: 与任务相关的关键内容
+    
+    ## 示例
+    
+    ### 示例1：基本搜索
+    ```json
+    {
+        "query": "Python异步编程教程"
+    }
+    ```
+    
+    ### 示例2：限制结果数
+    ```json
+    {
+        "query": "最新AI技术趋势",
+        "max_results": 3
+    }
+    ```
+    
+    ### 示例3：具体问题搜索
+    ```json
+    {
+        "query": "如何在Windows上安装Docker"
+    }
+    ```
     """
     
     name: str = "web_search"
-    description: str = "搜索网络获取信息，返回结构化结果（title/url/body/button）。LLM处理后保留title/url/abstract/key_content。参数：query（搜索查询），max_results（最大结果数，默认5）/ Search the web for information, returns structured results (title/url/body/button). After LLM processing, retain title/url/abstract/key_content. Parameters: query (search query), max_results (maximum results, default 5)"
-    description_zh: str = "搜索网络获取信息，返回结构化结果（title/url/body/button）。LLM处理后保留title/url/abstract/key_content。参数：query（搜索查询），max_results（最大结果数，默认5）"
-    description_en: str = "Search the web for information, returns structured results (title/url/body/button). After LLM processing, retain title/url/abstract/key_content. Parameters: query (search query), max_results (maximum results, default 5)"
+    
+    description: str = """网络搜索工具，执行网络搜索并返回结构化结果。
+
+## 基本描述
+
+执行网络搜索并返回结构化结果。主搜索引擎为Tavily，备用为DuckDuckGo。
+
+## 使用步骤
+
+1. **构造查询**：准备搜索关键词或问题
+2. **设置参数**：配置最大结果数（可选）
+3. **执行搜索**：调用工具进行搜索
+4. **解析结果**：从返回的JSON中提取所需信息
+
+## 使用说明
+
+- **query** (必填): 搜索查询字符串
+- **max_results** (可选): 最大结果数，默认5
+
+### 返回字段
+
+- title: 搜索结果标题
+- url: 结果链接
+- body: 内容摘要
+- button: 进一步搜索建议
+
+### LLM处理建议
+
+处理搜索结果时，建议提取：title、url、abstract（精炼摘要）、key_content（任务相关关键内容）
+
+## 示例
+
+基本搜索：{"query": "Python异步编程教程"}
+限制结果：{"query": "最新AI技术趋势", "max_results": 3}
+"""
+    
+    description_zh: str = """网络搜索工具，执行网络搜索并返回结构化结果。
+
+## 基本描述
+
+执行网络搜索并返回结构化结果。主搜索引擎为Tavily，备用为DuckDuckGo。
+
+## 使用步骤
+
+1. 构造查询：准备搜索关键词
+2. 设置参数：配置最大结果数（可选）
+3. 执行搜索：调用工具进行搜索
+4. 解析结果：从JSON中提取信息
+
+## 使用说明
+
+- **query** (必填): 搜索查询
+- **max_results** (可选): 最大结果数，默认5
+
+## 示例
+
+{"query": "Python教程", "max_results": 5}
+"""
+    
+    description_en: str = """Web search tool that performs search and returns structured results.
+
+## Basic Description
+
+Performs web search and returns structured results. Primary engine is Tavily, fallback is DuckDuckGo.
+
+## Usage Steps
+
+1. Construct query: Prepare search keywords or questions
+2. Set parameters: Configure max results (optional)
+3. Execute search: Call the tool to search
+4. Parse results: Extract needed information from JSON
+
+## Usage Instructions
+
+- **query** (required): Search query string
+- **max_results** (optional): Maximum results, default 5
+
+## Examples
+
+{"query": "Python async programming tutorial", "max_results": 5}
+"""
+    
     input_schema = SearchInput
     
     def __init__(self):

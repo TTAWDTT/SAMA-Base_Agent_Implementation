@@ -1,0 +1,331 @@
+SAMA-Base_Agent_Implementation 目录结构：
+============================================================
+D:\Github\SAMA-Base_Agent_Implementation/
+├── .git/
+│   ├── hooks/
+│   │   ├── applypatch-msg.sample
+│   │   ├── commit-msg.sample
+│   │   ├── fsmonitor-watchman.sample
+│   │   ├── post-update.sample
+│   │   ├── pre-applypatch.sample
+│   │   ├── pre-commit.sample
+│   │   ├── pre-merge-commit.sample
+│   │   ├── pre-push.sample
+│   │   ├── pre-rebase.sample
+│   │   ├── pre-receive.sample
+│   │   ├── prepare-commit-msg.sample
+│   │   ├── push-to-checkout.sample
+│   │   ├── sendemail-validate.sample
+│   │   └── update.sample
+│   ├── info/
+│   │   └── exclude
+│   ├── logs/
+│   │   ├── refs/
+│   │   │   ├── heads/
+│   │   │   │   ... (达到最大深度限制)
+│   │   │   └── remotes/
+│   │   │       ... (达到最大深度限制)
+│   │   └── HEAD
+│   ├── objects/
+│   │   ├── 03/
+│   │   │   └── 51406965773bc6ccae330e9bdc9c8be975c3d7
+│   │   ├── 06/
+│   │   │   └── ea6f3af4e0e1bec5892f0aa9069b97af91874c
+│   │   ├── 08/
+│   │   │   └── 273f0308fa7299542c172985f3049b2f08e450
+│   │   ├── 0b/
+│   │   │   └── b78b4d6ac033a94f68497016f6a4efb925197d
+│   │   ├── 11/
+│   │   │   └── 9f83f687b370c8c19bf05eda39eb2a3485161b
+│   │   ├── 14/
+│   │   │   └── db31b3e0d1e3b0874844c0323013664c6b2e3f
+│   │   ├── 16/
+│   │   │   └── e279d67f04be5ac77ee63b2e5dbfbf9e69207b
+│   │   ├── 1a/
+│   │   │   └── 64703a09cf3916a78df112461cb5b28c0679a2
+│   │   ├── 1d/
+│   │   │   ├── 159ded3a8d4b175475a6167cde2c9527317359
+│   │   │   ├── 1e62f062bb756c5d51fefca0b0a4ad1863b810
+│   │   │   ├── 673e3143fca00acd1a158f8b536bdc48c12b99
+│   │   │   └── 88eb40e5902e99e90bd83b2def9dba9c42bbb0
+│   │   ├── 1f/
+│   │   │   ├── 66ae6478033e3a83eb28eaca60eafaeaef5568
+│   │   │   └── 9740f75c34a548f1d78124827dffc95bd68af1
+│   │   ├── 20/
+│   │   │   └── 5df61f084b8874b4b5836337d559cda2638f21
+│   │   ├── 22/
+│   │   │   └── 5de2054181347a6e945db1816d294ad682bcab
+│   │   ├── 23/
+│   │   │   └── 2ff78a7736603b80fb7fd4a671a15a20daadfb
+│   │   ├── 25/
+│   │   │   └── 778ea8d449566982a554cc2c6945ec5219f605
+│   │   ├── 26/
+│   │   │   └── e422d7c5a44a4d10fa85d98c75552be27dd8bb
+│   │   ├── 27/
+│   │   │   └── f7f9f929a081eda8c6faae6748038899ebe7cd
+│   │   ├── 2a/
+│   │   │   └── d80fe524abad18edcd09a6a8d0a677b168a428
+│   │   ├── 2d/
+│   │   │   └── 3d0865cc5c3599df4baec57176e35f6c96318e
+│   │   ├── 30/
+│   │   │   └── 29af771d0742f3a08529d65600fb4cb8e50fd4
+│   │   ├── 34/
+│   │   │   └── b4823ef93e79c10fe5f0fd8b501c5b05df4325
+│   │   ├── 35/
+│   │   │   └── 32dff1ab4edde8804cd176db83c1733089099b
+│   │   ├── 37/
+│   │   │   └── 77a2ee32d594eaf4a6ed2190622ffef0e35127
+│   │   ├── 38/
+│   │   │   └── e32c52ca7670c26a6efa2935b607507fa578b3
+│   │   ├── 39/
+│   │   │   └── 758c30707632f29358bb615a3307bc88301014
+│   │   ├── 3a/
+│   │   │   ├── 082a4accd43439e21d92aebcb9abf7f9d793d8
+│   │   │   └── 34d5c61870a6a31dd4ef753f66ab92b49fb86f
+│   │   ├── 3f/
+│   │   │   └── 70a48ee1f481c237a7e0dda36e7a8ef2ad375b
+│   │   ├── 40/
+│   │   │   └── 6e3088f6e563e3743087976dee3304a9a692f3
+│   │   ├── 44/
+│   │   │   ├── 471421fdb024f4f585982fa62ccf416a960c8e
+│   │   │   └── 8e53e9cedf56202403da0687fda4697859aa1f
+│   │   ├── 46/
+│   │   │   └── 1258c58d363f2a607400eb864ebab819d2a5b0
+│   │   ├── 48/
+│   │   │   └── b10b4fa7d35b6d9e771273968eed4ef12b85a1
+│   │   ├── 49/
+│   │   │   ├── 25e0f57b83f3daeeba1aacbad4be0e8657203a
+│   │   │   └── 71a63b3a659c8f2a8c81f0a1ce0013cfa7a91c
+│   │   ├── 4b/
+│   │   │   └── 9a26c78f59c85149ef8c7038a65bf86791c93f
+│   │   ├── 4e/
+│   │   │   ├── 2e86885b9350097e645fbbed86a28fa2194ec7
+│   │   │   └── ce5615544fc051a5ceaee2ae129e2f2b3ae04e
+│   │   ├── 52/
+│   │   │   └── 6b4e0e64ebd4c092497fc067c1a711da7c464b
+│   │   ├── 54/
+│   │   │   ├── 188112b516d1e2b07bdcf09b47228a9364a901
+│   │   │   └── d62936eb97e2bc44331c1aa8f299faee5b21f2
+│   │   ├── 57/
+│   │   │   └── 6f3dcbdd863119179215d13f742f3c2b18285e
+│   │   ├── 59/
+│   │   │   ├── 2e672a4caca40ffab75603df17ccaa874e097c
+│   │   │   ├── 9f49fe058ec7ec64ca80041552f170ff8802d8
+│   │   │   └── c24d7324708886ff8c44aaa722478b55008e04
+│   │   ├── 5b/
+│   │   │   └── 9d7f3d4686205d2d1452ed8545da899bd08a2d
+│   │   ├── 5e/
+│   │   │   └── 98280efa0d6d749b1da6d44191383bcd88f90b
+│   │   ├── 60/
+│   │   │   └── 018e8dc3c1eb52d20d4fff3464fce478dae0be
+│   │   ├── 64/
+│   │   │   └── c5d277eecfd5855259120e75917c9a227ee1fd
+│   │   ├── 67/
+│   │   │   └── 1d0369c69ef8c5419b121b930fe2d156ef2bf7
+│   │   ├── 6b/
+│   │   │   └── e79d09911f223eee55c747e3a50c311401f0e6
+│   │   ├── 6e/
+│   │   │   └── 401ad30e4087f40e9fbcea6593008e690a4e5e
+│   │   ├── 6f/
+│   │   │   └── 0e64305c6f70d0cfd7cd39f42fa2364d46fd7f
+│   │   ├── 72/
+│   │   │   └── eb0d19e232a8877f060b678e373bc0c5cf11a0
+│   │   ├── 74/
+│   │   │   └── a160b49b0981e298a9e09c1dce91e345d2e2c2
+│   │   ├── 77/
+│   │   │   ├── 41cc3a46226a0b65d928d478bc60bd8c60df6f
+│   │   │   └── 688e61e00cf9f3d16c5f047b4d88362ffada70
+│   │   ├── 7d/
+│   │   │   └── aa0219d5bf86bb41fce8a248e52bcd7961a60a
+│   │   ├── 7f/
+│   │   │   └── 4caefea4e1b91dc13020ea8351c86756897f88
+│   │   ├── 80/
+│   │   │   └── 8e527a6cfceda8c21f46109606a7a2ae0c8913
+│   │   ├── 82/
+│   │   │   ├── 28abd6028f200414eafa9861d98f862ef93eb6
+│   │   │   └── 432ef2d7c3ee466e69f1e5279fc1a3dbe6cd30
+│   │   ├── 8a/
+│   │   │   └── 55adcad7f09d4d653f19c69eb3eefc7810fea1
+│   │   ├── 8b/
+│   │   │   ├── 01411cebb0ecd93f5d7b1e1e16737ba0e91b35
+│   │   │   └── 3b03d5f98016c5546dcb220523d07403e8171d
+│   │   ├── 8d/
+│   │   │   └── a255c66c33c6453ea250cb7d6651d755e6211f
+│   │   ├── 8f/
+│   │   │   └── 56294de436a1fbde7628feca5729ce703c3f7d
+│   │   ├── 90/
+│   │   │   └── feab4b5a840d298431c0c7012ee6fa65ade1b5
+│   │   ├── 92/
+│   │   │   └── 8c5fd688aaff6c2838860d13eb5d3fe17da026
+│   │   ├── 93/
+│   │   │   └── fa8f35088164cb4444153bf5327bf7115b14ef
+│   │   ├── 9b/
+│   │   │   ├── 7a72acd45e945d84fe1ea665f1359380a1f403
+│   │   │   └── d5793585d72812ea1664fc2d523afdba8ea63c
+│   │   ├── 9c/
+│   │   │   └── e9f686ac6de5a0362437a6c2f172e0dbc2d9ad
+│   │   ├── 9d/
+│   │   │   └── 296eaa4c06244a6e60c850e41ab8f1dce4fc90
+│   │   ├── a3/
+│   │   │   └── 568103f3109a9889a774603222c3b1037d54c5
+│   │   ├── a4/
+│   │   │   └── fc18cd20019e2c0061d1ea03e21b3796340be9
+│   │   ├── a9/
+│   │   │   └── 07ac473e91773ca1e19b7676e10e973a8bbfa0
+│   │   ├── ab/
+│   │   │   └── fac918b07369e0b74ad5fd95602d18c45a04ba
+│   │   ├── ac/
+│   │   │   └── ca6815c6178552e3f017bffa3ce71c3ec1857f
+│   │   ├── b0/
+│   │   │   ├── 60abd2a90e2b8d4f25b2e9f3b52ccd93fbb82c
+│   │   │   └── bf1e4213fa66053823d47dae0cc30cf9d48ef6
+│   │   ├── b3/
+│   │   │   └── b2dd7a3a0f2ebdf07d0b0c161b4b98caaa9729
+│   │   ├── b6/
+│   │   │   └── eba56345b40c7a9e9ba064d3fbb76fdcae5f14
+│   │   ├── b7/
+│   │   │   └── 3336c90e57da2bf1996ef66486925de8fbfa08
+│   │   ├── b8/
+│   │   │   └── 9887c0c1d0f4c2729a4fbcfbf6761d61d5fec6
+│   │   ├── bd/
+│   │   │   ├── 71d6cf887cb2ab0064bff4861ca3bebeb9ac55
+│   │   │   └── f3e0ae07b1ea1c4e79bddbca2b8484fbb43268
+│   │   ├── be/
+│   │   │   └── cfbdb052ad2bee9c37771a21d3b290c789f7d4
+│   │   ├── c1/
+│   │   │   └── 4acb2a26a56d67f5935fcdde383758ff5638c4
+│   │   ├── c2/
+│   │   │   └── 7b9703cd02a8e9be20881a49956ab48fb64e70
+│   │   ├── c5/
+│   │   │   └── fa794ff6bae64cfc6cb68fc3d0279381bb7b01
+│   │   ├── c6/
+│   │   │   ├── a31a3042bfccb7e2322c55a876382dd8fc0dd8
+│   │   │   └── e03c5284e90ea8adee7d9d85d03420962ec881
+│   │   ├── c7/
+│   │   │   └── 16c013854e7cac9c475776a26f88575c8fec86
+│   │   ├── cd/
+│   │   │   ├── 0bd27cc450a9840a00612e9662a0e88a93ac86
+│   │   │   ├── 2a3ad31715bca9d4df00e098c1f2000d5b241c
+│   │   │   └── ce2c3eaee2fdb394689d0bd20a5c5f2d692c3a
+│   │   ├── d9/
+│   │   │   └── c029f9e4cabce4f7d08b9350b85fef9b37b793
+│   │   ├── dd/
+│   │   │   └── 3ed7d58d3cbc61d7399d9ad2191fa25b12634d
+│   │   ├── e5/
+│   │   │   └── c582a1d2163ed1dfa9a3e1281dffcfea464322
+│   │   ├── ea/
+│   │   │   └── 505088f850a53e559a5e23fc79ffe6e8c4616a
+│   │   ├── eb/
+│   │   │   └── 2a64cc3edcb24f7f6db0c93deacb9fded2a129
+│   │   ├── ee/
+│   │   │   └── 30f6260ea264b2110ed8b762041979cff59ca1
+│   │   ├── f4/
+│   │   │   ├── 0f307b929307a64a058fe21202d75835aece65
+│   │   │   └── fc74a8ff7d88f35a77aa1542118b1b19dbb15f
+│   │   ├── fb/
+│   │   │   └── c93b3a8964117758e426a79ba21286ddc1e04a
+│   │   ├── info/
+│   │   └── pack/
+│   │       ├── pack-9c93ff0747013c5bff4dac6d46935a4ad9fe97fb.idx
+│   │       ├── pack-9c93ff0747013c5bff4dac6d46935a4ad9fe97fb.pack
+│   │       └── pack-9c93ff0747013c5bff4dac6d46935a4ad9fe97fb.rev
+│   ├── refs/
+│   │   ├── heads/
+│   │   │   └── main
+│   │   ├── remotes/
+│   │   │   └── origin/
+│   │   │       ... (达到最大深度限制)
+│   │   └── tags/
+│   ├── COMMIT_EDITMSG
+│   ├── config
+│   ├── description
+│   ├── FETCH_HEAD
+│   ├── HEAD
+│   ├── index
+│   ├── ORIG_HEAD
+│   └── packed-refs
+├── .vscode/
+│   └── settings.json
+├── docs/
+│   ├── guides/
+│   │   ├── quickstart.md
+│   │   └── 上下文字段添加.md
+│   ├── reports/
+│   │   └── TOOL_EXECUTION_FIX_DETAILED.md
+│   └── wiki/
+│       ├── Agent-Concept.md
+│       ├── Home.md
+│       ├── Prompt-Engineering.md
+│       └── Tool-System.md
+├── examples/
+│   └── file_context_demo.py
+├── outputs/
+│   ├── logs/
+│   │   └── agent.log
+│   ├── 图数据结构详解.md
+│   ├── 自我介绍.md
+│   └── 自我介绍文档.md
+├── scripts/
+│   └── __pycache__/
+│       └── demo_context.cpython-311.pyc
+├── src/
+│   ├── __pycache__/
+│   │   └── __init__.cpython-311.pyc
+│   ├── agents/
+│   │   ├── __pycache__/
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   └── base.cpython-311.pyc
+│   │   ├── __init__.py
+│   │   └── base.py
+│   ├── core/
+│   │   ├── __pycache__/
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   ├── config.cpython-311.pyc
+│   │   │   ├── logger.cpython-311.pyc
+│   │   │   ├── memory.cpython-311.pyc
+│   │   │   ├── prompts.cpython-311.pyc
+│   │   │   └── schema.cpython-311.pyc
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── logger.py
+│   │   ├── memory.py
+│   │   ├── prompts.py
+│   │   └── schema.py
+│   ├── tools/
+│   │   ├── __pycache__/
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   ├── base.cpython-311.pyc
+│   │   │   ├── python_tool.cpython-311.pyc
+│   │   │   ├── search_tool.cpython-311.pyc
+│   │   │   ├── shell_tool.cpython-311.pyc
+│   │   │   ├── todo_tool.cpython-311.pyc
+│   │   │   └── unified_file_tool.cpython-311.pyc
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── python_tool.py
+│   │   ├── search_tool.py
+│   │   ├── shell_tool.py
+│   │   ├── todo_tool.py
+│   │   └── unified_file_tool.py
+│   ├── utils/
+│   │   ├── __pycache__/
+│   │   │   ├── __init__.cpython-311.pyc
+│   │   │   └── helpers.cpython-311.pyc
+│   │   ├── __init__.py
+│   │   └── helpers.py
+│   └── __init__.py
+├── workspace/
+│   ├── Claude_AI_News_Summary_2025.md
+│   ├── directory_tree.txt
+│   ├── search_results.txt
+│   ├── summary.txt
+│   └── 目录文件总结.md
+├── .gitignore
+├── AGENT.md
+├── config.yaml
+├── LICENSE
+├── main.py
+├── README.md
+├── requirements.txt
+├── 图数据结构精炼详解.md
+└── 集合与搜索核心知识点（含C++代码）.md

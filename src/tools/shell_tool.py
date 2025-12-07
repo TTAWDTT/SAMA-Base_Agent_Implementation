@@ -33,19 +33,154 @@ class ShellTool(BaseTool):
     """
     Shell命令执行工具 / Shell Command Execution Tool
     
-    在系统Shell中执行命令并返回结果
-    Executes commands in system shell and returns results
+    ## 基本描述
     
-    安全策略 / Security Policy:
-    - allow_all: 允许执行所有命令（危险）/ Allow all commands (dangerous)
-    - deny_all: 禁止执行任何命令 / Deny all commands
-    - whitelist: 只允许白名单中的命令 / Only allow whitelisted commands
+    在系统Shell中执行命令并返回结果。支持Windows和Unix系统，
+    自动检测操作系统并选择合适的Shell环境。
+    
+    Executes commands in system shell and returns results. Supports Windows and Unix systems,
+    automatically detects OS and selects appropriate shell environment.
+    
+    ## 使用步骤
+    
+    1. **准备命令**：确定要执行的Shell命令
+    2. **设置参数**：配置超时时间和工作目录（可选）
+    3. **执行命令**：调用工具执行命令
+    4. **处理结果**：解析返回的stdout/stderr输出
+    
+    ## 使用说明
+    
+    - **command** (必填): 要执行的Shell命令字符串
+    - **timeout** (可选): 执行超时秒数，默认30秒
+    - **working_directory** (可选): 命令执行的工作目录，默认当前目录
+    
+    ### 安全策略
+    
+    - **allow_all**: 允许执行所有命令（危险，仅限受信环境）
+    - **deny_all**: 禁止执行任何命令
+    - **whitelist**: 只允许白名单中的命令（推荐）
+    
+    ### 注意事项
+    
+    - 路径包含空格时需用引号括起
+    - 尽量使用绝对路径，避免使用cd切换目录
+    - 多个独立命令可用&&链接
+    - 避免使用此工具进行文件读写操作，应使用file工具
+    
+    ## 示例
+    
+    ### 示例1：列出目录内容
+    ```json
+    {
+        "command": "dir",
+        "working_directory": "C:\\Users"
+    }
+    ```
+    
+    ### 示例2：带超时的命令
+    ```json
+    {
+        "command": "ping localhost -n 5",
+        "timeout": 60
+    }
+    ```
+    
+    ### 示例3：链式命令
+    ```json
+    {
+        "command": "git status && git log --oneline -5"
+    }
+    ```
     """
     
     name: str = "shell"
-    description: str = "执行Shell命令。参数：command（要执行的命令），timeout（可选，超时秒数），working_directory（可选，工作目录）/ Execute shell command. Parameters: command (command to execute), timeout (optional, timeout seconds), working_directory (optional, working directory)"
-    description_zh: str = "执行Shell命令。参数：command（要执行的命令），timeout（可选，超时秒数），working_directory（可选，工作目录）"
-    description_en: str = "Execute shell command. Parameters: command (command to execute), timeout (optional, timeout seconds), working_directory (optional, working directory)"
+    
+    description: str = """Shell命令执行工具，在系统Shell中执行命令并返回结果。
+
+## 基本描述
+
+在系统Shell中执行命令并返回结果。支持Windows和Unix系统，自动检测操作系统。
+
+## 使用步骤
+
+1. **准备命令**：确定要执行的Shell命令
+2. **设置参数**：配置超时时间和工作目录（可选）
+3. **执行命令**：调用工具执行命令
+4. **处理结果**：解析返回的stdout/stderr输出
+
+## 使用说明
+
+- **command** (必填): 要执行的Shell命令字符串
+- **timeout** (可选): 执行超时秒数，默认30秒
+- **working_directory** (可选): 命令执行的工作目录
+
+### 安全策略
+
+- allow_all: 允许执行所有命令（危险）
+- deny_all: 禁止执行任何命令
+- whitelist: 只允许白名单中的命令（推荐）
+
+### 注意事项
+
+- 路径包含空格时需用引号括起
+- 尽量使用绝对路径，避免频繁切换目录
+- 避免使用此工具进行文件读写，应使用file工具
+
+## 示例
+
+列出目录：{"command": "dir", "working_directory": "C:\\\\Users"}
+带超时：{"command": "ping localhost -n 5", "timeout": 60}
+链式命令：{"command": "git status && git log --oneline -5"}
+"""
+    
+    description_zh: str = """Shell命令执行工具，在系统Shell中执行命令并返回结果。
+
+## 基本描述
+
+在系统Shell中执行命令并返回结果。支持Windows和Unix系统。
+
+## 使用步骤
+
+1. 准备命令：确定要执行的Shell命令
+2. 设置参数：配置超时时间和工作目录（可选）
+3. 执行命令：调用工具执行命令
+4. 处理结果：解析返回的stdout/stderr输出
+
+## 使用说明
+
+- **command** (必填): 要执行的Shell命令
+- **timeout** (可选): 超时秒数，默认30秒
+- **working_directory** (可选): 工作目录
+
+## 示例
+
+{"command": "dir", "timeout": 30, "working_directory": "C:\\\\Users"}
+"""
+    
+    description_en: str = """Shell command execution tool that executes commands in system shell.
+
+## Basic Description
+
+Executes commands in system shell and returns results. Supports Windows and Unix.
+
+## Usage Steps
+
+1. Prepare command: Determine the shell command to execute
+2. Set parameters: Configure timeout and working directory (optional)
+3. Execute: Call the tool to run the command
+4. Handle results: Parse stdout/stderr output
+
+## Usage Instructions
+
+- **command** (required): Shell command string to execute
+- **timeout** (optional): Timeout in seconds, default 30
+- **working_directory** (optional): Working directory for command
+
+## Examples
+
+{"command": "ls -la", "timeout": 30, "working_directory": "/home/user"}
+"""
+    
     input_schema = ShellInput
     
     # 默认危险命令黑名单（即使在allow_all模式下也禁止）
