@@ -36,9 +36,68 @@ subprocess32>=3.5.4;python_version<"3.0"
 tavily-python>=0.5.0
 duckduckgo-search>=6.0.0
 
+# ==============================================================================
+# GAIA Benchmark 所需依赖 / GAIA Benchmark Dependencies
+# ==============================================================================
+
+# 数据集读取 / Dataset Reading
+pandas>=2.2.0
+fastparquet>=2024.2.0
+pyarrow>=15.0.0
+
+# PDF 处理 / PDF Processing
+pypdf>=5.0.0
+pdfminer.six>=20240706
+pdfplumber>=0.11.0
+PyMuPDF>=1.24.0
+
+# Word 文档处理 / Word Document Processing
+python-docx>=1.1.0
+mammoth>=1.8.0
+
+# Excel 处理 / Excel Processing
+openpyxl>=3.1.5
+xlrd>=2.0.1
+
+# PowerPoint 处理 / PowerPoint Processing
+python-pptx>=1.0.0
+
+# 图像处理 / Image Processing
+Pillow>=11.0.0
+
+# 数值计算 / Numerical Computing
+numpy>=2.0.0
+numexpr>=2.10.0
+
+# HTML/Web 内容处理 / HTML/Web Content
+beautifulsoup4>=4.12.0
+markdownify>=0.13.0
+lxml>=5.0.0
+
+# 文件类型检测 / File Type Detection
+puremagic>=1.28
+
+# ==============================================================================
+# 可选依赖（按需安装）/ Optional Dependencies (Install as Needed)
+# ==============================================================================
+
+# OCR 文字识别（需要安装 Tesseract）/ OCR (requires Tesseract installation)
+# pytesseract>=0.3.10
+# opencv-python>=4.9.0
+
+# 音频转文字 / Audio Transcription
+# openai-whisper>=20240930
+
+# YouTube 字幕 / YouTube Transcripts
+# youtube-transcript-api>=0.6.2
+
+# ==============================================================================
 # 开发依赖 / Development Dependencies
+# ==============================================================================
+
 pytest>=7.0.0
 pytest-asyncio>=0.23.0
 black>=24.0.0
 isort>=5.0.0
 mypy>=1.0.0
+

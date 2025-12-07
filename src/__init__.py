@@ -30,6 +30,12 @@ from src.tools import (
     ALL_TOOLS,
     DEFAULT_TOOLS,
 )
+from src.utils import (
+    DocumentConverter,
+    preprocess_files,
+    get_supported_extensions,
+    is_file_supported,
+)
 
 __version__ = "0.1.0"
 
@@ -65,4 +71,9 @@ __all__ = [
     "WebSearchTool",
     "ALL_TOOLS",
     "DEFAULT_TOOLS",
+    # Document Processing
+    "DocumentConverter",
+    "preprocess_files",
+    "get_supported_extensions",
+    "is_file_supported",
 ]
