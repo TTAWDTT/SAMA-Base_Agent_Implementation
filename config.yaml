@@ -23,13 +23,13 @@ model:
   max_tokens: 262144
   
   # 请求超时（秒）/ Request timeout (seconds)
-  timeout: 240
+  timeout: 480
 
 # Agent配置 / Agent Configuration
 agent:
   # 最大迭代次数 / Maximum iterations
   # 防止无限循环 / Prevents infinite loops
-  max_iterations: 30
+  max_iterations: 300
   
   # 是否启用详细日志 / Enable verbose logging
   verbose: true

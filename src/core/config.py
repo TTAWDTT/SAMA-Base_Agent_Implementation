@@ -52,7 +52,7 @@ class ModelConfig(BaseModel):
     @property
     def effective_model_name(self) -> str:
         """获取有效的模型名称 / Get effective model name"""
-        return self.main_model_name or self.model_name
+        return self.sub_model_name or self.model_name
 
 
 class AgentConfig(BaseModel):
