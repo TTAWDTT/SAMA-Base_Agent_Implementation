@@ -282,7 +282,43 @@ def _move_workspace_files_to_output(new_files: set, task_id: str, root: Path) ->
         except Exception as e:
             print(f"   ⚠️  无法移动 workspace/{name}: {e}")
 
+def _snapshot_root_files(root: Path) -> set:
+    """
+    快照根目录下的顶层文件名（不递归子目录）。
+    返回文件名集合（只包含顶层文件，不含路径）。
+    """
+    files = set()
+    try:
+        for p in root.iterdir():
+            try:
+                if p.is_file():
+                    files.add(p.name)
+            except Exception:
+                continue
+    except Exception:
+        return set()
+    return files
 
+def _move_root_files_to_output(new_files: set, task_id: str, root: Path) -> None:
+    """
+    将根目录下的新顶层文件移动到 outputs/{task_id} 下，保留文件名。
+    只处理文件，不处理文件夹或子目录内的内容。
+    """
+    out_base = Path(root) / OUTPUT_DIR / task_id
+    out_base.mkdir(parents=True, exist_ok=True)
+
+    for name in sorted(new_files):
+        src = root / name
+        if not src.exists() or not src.is_file():
+            continue
+        dest = out_base / name
+        try:
+            shutil.move(str(src), str(dest))
+            print(f"   ↪️  已移动 {name} -> {dest}")
+        except Exception as e:
+            print(f"   ⚠️  无法移动 {name}: {e}")
+            
+            
 # ==============================================================================
 # 主处理函数 / Main Processing Functions
 # ==============================================================================
@@ -526,6 +562,7 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
         try:
             # 快照 workspace/ 根目录在任务开始前的文件列表（仅顶层文件）
             _before_snapshot = _snapshot_workspace_files(project_root)
+            _root_before_snapshot = _snapshot_root_files(project_root)
 
             row = df.iloc[idx]
             task_id, prompt, reference_files = extract_task_info(row)
@@ -539,10 +576,15 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
 
             # 快照任务结束后 workspace/ 根目录文件列表，移动新增的顶层文件到 outputs/{task_id}
             _after_snapshot = _snapshot_workspace_files(project_root)
+            _root_after_snapshot = _snapshot_root_files(project_root)
             new_files = set(_after_snapshot) - set(_before_snapshot)
+            root_new_files = set(_root_after_snapshot) - set(_root_before_snapshot)
             if new_files:
                 print(f"\n📦 发现 {len(new_files)} 个新文件在 workspace/ 根目录，将移动到 outputs/{task_id}...")
                 _move_workspace_files_to_output(new_files, task_id, project_root)
+            if root_new_files:
+                print(f"\n📦 发现 {len(root_new_files)} 个新文件在根目录，将移动到 outputs/{task_id}...")
+                _move_root_files_to_output(root_new_files, task_id, project_root)
 
             # 重置Agent状态 / Reset Agent state
             agent.reset()
