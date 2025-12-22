@@ -19,14 +19,14 @@
 ## 📁 项目结构 / Project Structure
 
 ```
-ai-agent-project/
+SAMA-Base_Agent_Implementation/
 ├── README.md                      # 项目文档
 ├── LICENSE                        # MIT 许可证
 ├── .gitignore                     # Git 忽略配置
 ├── requirements.txt               # Python 依赖
 ├── config.yaml                    # 配置文件
-├── AGENT.md                       # AI 代理指导文件
 ├── main.py                        # 主入口
+├── launch.py                      # GAIA 批处理入口
 ├── src/                           # 源代码
 │   ├── __init__.py
 │   ├── agents/                    # Agent 实现
@@ -35,27 +35,26 @@ ai-agent-project/
 │   ├── tools/                     # 工具模块
 │   │   ├── __init__.py
 │   │   ├── base.py               # 工具基类
-│   │   ├── file_tool.py          # 文件操作工具
-│   │   ├── code_executor.py      # 代码执行工具
-│   │   ├── calculator.py         # 计算器工具
+│   │   ├── shell_tool.py         # Shell 命令工具
+│   │   ├── unified_file_tool.py  # 文件工具（read/write/list）
+│   │   ├── python_tool.py        # Python 执行工具
 │   │   ├── search_tool.py        # 搜索工具
-│   │   └── datetime_tool.py      # 日期时间工具
+│   │   └── todo_tool.py          # 任务管理工具
 │   ├── core/                      # 核心模块
 │   │   ├── __init__.py
 │   │   ├── config.py             # 配置管理
 │   │   ├── logger.py             # 日志管理
 │   │   ├── memory.py             # 对话记忆
-│   │   ├── context.py            # 上下文管理 (NEW!)
 │   │   ├── schema.py             # 数据结构
 │   │   └── prompts.py            # 提示词模板
 │   └── utils/                     # 工具函数
 │       ├── __init__.py
-│       └── helpers.py
-├── docs/                          # 文档
-│   └── guides/
-│       └── quickstart.md
-└── outputs/                       # 输出目录
-    └── logs/
+│       ├── helpers.py
+│       └── document_processor.py
+├── dataset/                       # 数据集（可选）
+├── scripts/                       # 脚本（可选）
+├── workspace/                     # Agent 工作区（运行时生成）
+└── outputs/                       # 输出目录（运行时生成）
 ```
 
 ## 🚀 快速开始 / Quick Start
@@ -153,25 +152,6 @@ agent.remove_file_from_context("old_config.json")
 print(agent.get_files_summary())
 ```
 
-详细文档请参见：[FILE_CONTEXT_GUIDE.md](docs/FILE_CONTEXT_GUIDE.md)
-
-完整示例请参见：[file_context_demo.py](examples/file_context_demo.py)
-
-# 运行任务
-response = agent.run("分析数据")
-
-# 查看上下文统计
-print(f"交互次数: {agent.context.session.interaction_count}")
-print(f"Token使用: {agent.context.session.total_tokens_used}")
-
-# 更新上下文
-agent.update_context(priority="high", user_id="123")
-```
-
-**详细文档**: 查看 [CONTEXT_USAGE_GUIDE.md](CONTEXT_USAGE_GUIDE.md) 了解完整的上下文系统使用方法。
-
-**演示脚本**: 运行 `python scripts/demo_context.py` 查看上下文系统的各种功能演示。
-
 ### 代码集成 / Code Integration
 
 ```python
@@ -217,17 +197,11 @@ agent.add_tool(MyTool)
 
 | 工具 / Tool | 说明 / Description |
 |-------------|-------------------|
-| `read_file` | 读取文件内容 |
-| `write_file` | 写入文件内容 |
-| `list_directory` | 列出目录内容 |
-| `execute_code` | 执行代码 |
-| `python_repl` | Python REPL |
-| `calculator` | 数学计算 |
-| `get_current_time` | 获取当前时间 |
-| `date_calculator` | 日期计算 |
-| `time_difference` | 时间差计算 |
+| `shell` | 执行 Shell 命令（支持白名单） |
+| `file` | 文件读写与列目录 |
+| `python` | Python 代码执行 |
 | `web_search` | 网络搜索（需配置） |
-| `duckduckgo_search` | DuckDuckGo 搜索 |
+| `todo` | 任务管理 |
 
 ## ⚙️ 配置说明 / Configuration
 
