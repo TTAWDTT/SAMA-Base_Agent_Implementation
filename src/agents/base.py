@@ -208,6 +208,15 @@ You can create, modify and manage files in the workspace. For important intermed
             return match.group(1).strip()
         
         return None
+
+    def _strip_thinking_tags(self, content: str) -> str:
+        """
+        移除<thinking>标签内容 / Remove <thinking> tag content
+        """
+        if not content:
+            return ""
+        cleaned = re.sub(r'<thinking>.*?</thinking>', '', content, flags=re.DOTALL | re.IGNORECASE)
+        return cleaned.strip()
     
     def _init_tools(self, tools: Optional[List[Union[BaseTool, Type[BaseTool]]]] = None) -> None:
         """
@@ -620,7 +629,7 @@ You can create, modify and manage files in the workspace. For important intermed
                         })
                     
                     self.memory.add_assistant_message(
-                        message.content or "",
+                        self._strip_thinking_tags(message.content or ""),
                         metadata={"tool_calls": tool_calls_data} if tool_calls_data else None
                     )
                     
@@ -675,7 +684,7 @@ You can create, modify and manage files in the workspace. For important intermed
                     self.state = AgentState.COMPLETED
                     
                     # 添加最终响应到记忆 / Add final response to memory
-                    final_answer = message.content or ""
+                    final_answer = self._strip_thinking_tags(message.content or "")
                     self.memory.add_assistant_message(final_answer)
                     step.response = final_answer
                     

@@ -189,6 +189,7 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
         self.enabled = config.tools.search_tool.enabled
         self.api_key = config.tools.search_tool.api_key
         self.engine = config.tools.search_tool.engine
+        self._last_tavily_error = None
     
     def _run(self, query: str, max_results: int = 5) -> str:
         """
@@ -211,6 +212,8 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
                 "hint": "请在config.yaml中配置search_tool.enabled=true / Please set search_tool.enabled=true in config.yaml"
             }, ensure_ascii=False)
         
+        self._last_tavily_error = None
+
         # 尝试使用Tavily搜索 / Try Tavily search
         if self.api_key:
             tavily_result = self._search_with_tavily(query, max_results)
@@ -219,11 +222,12 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             self.logger.warning("Tavily搜索失败，回退到DuckDuckGo / Tavily search failed, falling back to DuckDuckGo")
         else:
             self.logger.info("Tavily API密钥未配置，使用DuckDuckGo / Tavily API key not configured, using DuckDuckGo")
+            self._last_tavily_error = "Tavily API key missing or empty"
         
         # 回退到DuckDuckGo搜索 / Fallback to DuckDuckGo search
-        return self._search_with_duckduckgo(query, max_results)
+        return self._search_with_duckduckgo(query, max_results, self._last_tavily_error)
     
-    def _format_results(self, query: str, results: List[Dict], engine: str) -> str:
+    def _format_results(self, query: str, results: List[Dict], engine: str, notice: Optional[str] = None) -> str:
         """
         格式化搜索结果为统一结构 / Format search results to unified structure
         
@@ -242,6 +246,8 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             "results": results,
             "llm_instruction": "处理搜索结果时，请提取并保留以下字段：title（标题）、url（链接）、abstract（精炼摘要）、key_content（与任务相关的关键内容，包括进一步搜索的button建议、相关资源url等）/ When processing search results, extract and retain: title, url, abstract (refined summary), key_content (task-relevant key content including suggested search buttons, related resource urls, etc.)"
         }
+        if notice:
+            formatted["notice"] = notice
         return json.dumps(formatted, ensure_ascii=False, indent=2)
     
     def _search_with_tavily(self, query: str, max_results: int) -> Optional[str]:
@@ -290,12 +296,14 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             
         except ImportError:
             self.logger.warning("Tavily库未安装 / Tavily library not installed")
+            self._last_tavily_error = "Tavily library not installed"
             return None
         except Exception as e:
             self.logger.error(f"Tavily搜索出错 / Tavily search error: {str(e)}")
+            self._last_tavily_error = f"Tavily search error: {str(e)}"
             return None
     
-    def _search_with_duckduckgo(self, query: str, max_results: int) -> str:
+    def _search_with_duckduckgo(self, query: str, max_results: int, tavily_error: Optional[str] = None) -> str:
         """
         使用DuckDuckGo执行搜索 / Execute search with DuckDuckGo
         
@@ -309,8 +317,8 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
         try:
             raw_results = None
             try:
-                from duckduckgo_search import DDGS
-                with DDGS() as ddgs:
+                from duckduckgo_search import ddgs
+                with ddgs() as ddgs:
                     raw_results = list(ddgs.text(query, max_results=max_results))
             except ImportError:
                 from duckduckgo_search import ddgs
@@ -336,17 +344,24 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
                 }
                 results.append(result)
             
-            return self._format_results(query, results, "duckduckgo")
+            notice = f"Fell back to DuckDuckGo: {tavily_error}" if tavily_error else None
+            return self._format_results(query, results, "duckduckgo", notice)
             
         except ImportError:
-            return json.dumps({
+            payload = {
                 "error": "搜索库未安装 / Search library not installed",
                 "hint": "请运行: pip install duckduckgo-search / Please run: pip install duckduckgo-search"
-            }, ensure_ascii=False)
+            }
+            if tavily_error:
+                payload["tavily_error"] = tavily_error
+            return json.dumps(payload, ensure_ascii=False)
         except Exception as e:
-            return json.dumps({
+            payload = {
                 "error": f"DuckDuckGo搜索出错 / DuckDuckGo search error: {str(e)}"
-            }, ensure_ascii=False)
+            }
+            if tavily_error:
+                payload["tavily_error"] = tavily_error
+            return json.dumps(payload, ensure_ascii=False)
     
     def _generate_related_queries(self, original_query: str, title: str) -> List[str]:
         """
