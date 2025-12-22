@@ -231,43 +231,7 @@ You can create, modify and manage files in the workspace. For important intermed
         Returns:
             List[Dict]: OpenAI函数调用格式的工具定义 / Tool definitions in OpenAI function calling format
         """
-        tools = []
-        for tool in self.tools.values():
-            # 获取工具的Schema定义
-            # Get tool schema definition
-            tool_schema = tool.get_schema()
-            
-            # 确保基础结构符合Kimi要求
-            # Ensure basic structure complies with Kimi requirements
-            tool_def = {
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description if tool.description else f"{tool.name} tool",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                }
-            }
-            
-            # 合并Schema中的参数定义
-            # Merge parameter definitions from schema
-            if "function" in tool_schema and "parameters" in tool_schema["function"]:
-                params = tool_schema["function"]["parameters"]
-                
-                # 确保parameters是object类型
-                # Ensure parameters is object type
-                if isinstance(params, dict):
-                    if "properties" in params:
-                        tool_def["function"]["parameters"]["properties"] = params["properties"]
-                    if "required" in params:
-                        tool_def["function"]["parameters"]["required"] = params["required"]
-            
-            tools.append(tool_def)
-        
-        return tools
+        return [tool.get_schema() for tool in self.tools.values()]
     
     def _call_llm(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """

@@ -22,13 +22,7 @@ ALL_TOOLS = [
 ]
 
 # 默认工具集（与ALL_TOOLS相同）/ Default tool set (same as ALL_TOOLS)
-DEFAULT_TOOLS = [
-    ShellTool,
-    FileTool,
-    PythonTool,
-    WebSearchTool,
-    TodoTool,
-]
+DEFAULT_TOOLS = ALL_TOOLS
 
 __all__ = [
     # Base
