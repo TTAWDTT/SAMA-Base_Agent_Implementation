@@ -157,6 +157,11 @@ class MemoryConfig(BaseModel):
         gt=0,
         description="最大记忆条数 / Maximum memory entries"
     )
+    max_context_tokens: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="上下文最大token数（估算）/ Maximum context tokens (estimated)"
+    )
     type: str = Field(default="buffer", description="记忆类型 / Memory type")
 
 

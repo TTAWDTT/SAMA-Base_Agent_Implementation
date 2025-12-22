@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.core.config import get_config
+from src.utils.helpers import estimate_tokens
 
 
 @dataclass
@@ -102,6 +103,7 @@ class ConversationMemory:
         """
         config = get_config()
         self.max_entries = max_entries or config.memory.max_entries
+        self.max_context_tokens = config.memory.max_context_tokens
         self.messages: List[Message] = []
         self.system_message: Optional[Message] = None
         self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径 / File context dict, key is file path
@@ -211,7 +213,47 @@ class ConversationMemory:
         for msg in self.messages:
             messages.append(msg.to_openai_format())
         
-        return messages
+        return self._trim_messages_to_token_limit(messages)
+
+    def _trim_messages_to_token_limit(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        根据token预算裁剪消息 / Trim messages to token budget
+        """
+        if not self.max_context_tokens:
+            return messages
+
+        if not messages:
+            return messages
+
+        pinned = []
+        idx = 0
+
+        # 保留系统消息 / Always keep system message
+        if messages[0].get("role") == "system":
+            pinned.append(messages[0])
+            idx = 1
+
+        # 保留文件上下文消息（如果存在）/ Keep file context message if present
+        if idx < len(messages) and messages[idx].get("role") == "system":
+            pinned.append(messages[idx])
+            idx += 1
+
+        def _msg_tokens(msg: Dict[str, Any]) -> int:
+            return estimate_tokens(msg.get("content", "") or "")
+
+        total_tokens = sum(_msg_tokens(msg) for msg in pinned)
+        remaining = messages[idx:]
+        kept = []
+
+        for msg in reversed(remaining):
+            msg_tokens = _msg_tokens(msg)
+            if total_tokens + msg_tokens > self.max_context_tokens:
+                break
+            kept.append(msg)
+            total_tokens += msg_tokens
+
+        kept.reverse()
+        return pinned + kept
     
     def _build_file_context_message(self) -> Optional[Dict[str, str]]:
         """
