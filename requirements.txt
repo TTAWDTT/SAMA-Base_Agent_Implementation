@@ -55,6 +55,10 @@ PyMuPDF>=1.24.0
 python-docx>=1.1.0
 mammoth>=1.8.0
 
+# 老式Office文件处理 / Legacy Office File Processing (for .doc, .ppt, .xls)
+olefile>=0.47
+# pywin32>=306  # Windows only - 需要安装Microsoft Office / requires MS Office installed
+
 # Excel 处理 / Excel Processing
 openpyxl>=3.1.5
 xlrd>=2.0.1

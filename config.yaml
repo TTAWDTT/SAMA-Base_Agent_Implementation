@@ -23,7 +23,7 @@ model:
   max_tokens: 262144
   
   # 请求超时（秒）/ Request timeout (seconds)
-  timeout: 480
+  timeout: 480                                                                                
 
 # Agent配置 / Agent Configuration
 agent:
@@ -105,7 +105,7 @@ tools:
   search_tool:
     enabled: true
     # 搜索API配置 / Search API configuration
-    api_key: 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
+    api_key: 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
     engine: tavily
 
 # 日志配置 / Logging Configuration

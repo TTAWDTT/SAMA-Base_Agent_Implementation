@@ -67,6 +67,25 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
+# pywin32 用于Windows下读取老式.doc文件 / pywin32 for reading legacy .doc files on Windows
+try:
+    import win32com.client
+    import pythoncom
+    PYWIN32_AVAILABLE = True
+except ImportError:
+    PYWIN32_AVAILABLE = False
+
+# olefile 用于跨平台读取老式.doc文件 / olefile for cross-platform reading of legacy .doc files
+try:
+    import olefile
+    OLEFILE_AVAILABLE = True
+except ImportError:
+    OLEFILE_AVAILABLE = False
+
+# subprocess 用于调用外部工具 / subprocess for calling external tools
+import subprocess
+import platform
+
 
 # ==============================================================================
 # 辅助函数 / Helper Functions
@@ -127,12 +146,28 @@ def check_dependencies(file_ext: str) -> Optional[str]:
     if ext == 'pdf':
         if not PDFPLUMBER_AVAILABLE:
             return "pdfplumber"
-    elif ext in ['docx', 'doc']:
+    elif ext == 'docx':
         if not DOCX_AVAILABLE:
             return "python-docx"
+    elif ext == 'doc':
+        # .doc文件需要pywin32(Windows)或olefile(跨平台)
+        # .doc files need pywin32 (Windows) or olefile (cross-platform)
+        if not PYWIN32_AVAILABLE and not OLEFILE_AVAILABLE:
+            if platform.system() == 'Windows':
+                return "pywin32"
+            else:
+                return "olefile"
     elif ext == 'pptx':
         if not PPTX_AVAILABLE:
             return "python-pptx"
+    elif ext in ['ppt']:
+        # 老式.ppt文件需要pywin32
+        # Legacy .ppt files need pywin32
+        if not PYWIN32_AVAILABLE:
+            if platform.system() == 'Windows':
+                return "pywin32"
+            else:
+                return "libreoffice (soffice command)"
     elif ext in ['xlsx', 'xls']:
         if not PANDAS_AVAILABLE:
             return "pandas"
@@ -162,7 +197,7 @@ class DocumentConverter:
     
     # 支持的文件扩展名 / Supported file extensions
     SUPPORTED_EXTENSIONS = {
-        'document': ['.pdf', '.docx', '.doc', '.pptx', '.txt', '.md'],
+        'document': ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md'],
         'image': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.svg'],
         'spreadsheet': ['.xlsx', '.xls', '.csv'],
     }
@@ -346,7 +381,7 @@ class DocumentConverter:
     
     def convert_word(self, file_path: str) -> str:
         """
-        转换Word文档 / Convert Word document
+        转换Word文档(.docx) / Convert Word document (.docx)
         
         Args:
             file_path: Word文件路径 / Word file path
@@ -392,6 +427,279 @@ class DocumentConverter:
                     logger.warning(f"Word图片提取失败 / Failed to extract Word image: {e}")
         
         return "\n\n".join(md_content)
+    
+    def convert_doc_legacy(self, file_path: str) -> str:
+        """
+        转换老式Word文档(.doc) / Convert legacy Word document (.doc)
+        
+        支持多种方法按优先级尝试 / Supports multiple methods with priority:
+        1. pywin32 (仅Windows，最可靠) / pywin32 (Windows only, most reliable)
+        2. antiword (跨平台命令行工具) / antiword (cross-platform CLI tool)
+        3. olefile (跨平台，基本文本提取) / olefile (cross-platform, basic text extraction)
+        
+        Args:
+            file_path: .doc文件路径 / .doc file path
+            
+        Returns:
+            str: 提取的文本内容 / Extracted text content
+        """
+        file_name = Path(file_path).stem
+        md_content = []
+        
+        # 方法1: 使用 pywin32 (Windows COM接口)
+        # Method 1: Use pywin32 (Windows COM interface)
+        if PYWIN32_AVAILABLE and platform.system() == 'Windows':
+            try:
+                pythoncom.CoInitialize()
+                try:
+                    word = win32com.client.Dispatch("Word.Application")
+                    word.Visible = False
+                    
+                    # 打开文档 / Open document
+                    doc = word.Documents.Open(os.path.abspath(file_path))
+                    
+                    # 提取文本 / Extract text
+                    text = doc.Content.Text
+                    md_content.append(text)
+                    
+                    # 提取表格 / Extract tables
+                    for table_idx, table in enumerate(doc.Tables, 1):
+                        md_content.append(f"\n[表格 {table_idx}]")
+                        try:
+                            for row in table.Rows:
+                                row_texts = []
+                                for cell in row.Cells:
+                                    row_texts.append(cell.Range.Text.strip().replace('\r\x07', ''))
+                                md_content.append(" | ".join(row_texts))
+                        except Exception as e:
+                            logger.warning(f"表格提取部分失败 / Table extraction partially failed: {e}")
+                    
+                    doc.Close(False)
+                    word.Quit()
+                    
+                    logger.info(f"使用pywin32成功转换.doc文件 / Successfully converted .doc file using pywin32: {file_path}")
+                    return "\n\n".join(md_content)
+                    
+                finally:
+                    pythoncom.CoUninitialize()
+                    
+            except Exception as e:
+                logger.warning(f"pywin32转换失败，尝试其他方法 / pywin32 conversion failed, trying other methods: {e}")
+        
+        # 方法2: 使用 antiword 命令行工具
+        # Method 2: Use antiword CLI tool
+        try:
+            antiword_cmd = "antiword" if platform.system() != 'Windows' else "antiword.exe"
+            result = subprocess.run(
+                [antiword_cmd, file_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding='utf-8',
+                errors='replace'
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                logger.info(f"使用antiword成功转换.doc文件 / Successfully converted .doc file using antiword: {file_path}")
+                return result.stdout
+        except FileNotFoundError:
+            logger.debug("antiword未安装 / antiword not installed")
+        except subprocess.TimeoutExpired:
+            logger.warning("antiword执行超时 / antiword execution timeout")
+        except Exception as e:
+            logger.warning(f"antiword转换失败 / antiword conversion failed: {e}")
+        
+        # 方法3: 使用 catdoc 命令行工具 (常见于Linux)
+        # Method 3: Use catdoc CLI tool (common on Linux)
+        try:
+            result = subprocess.run(
+                ["catdoc", file_path],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding='utf-8',
+                errors='replace'
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                logger.info(f"使用catdoc成功转换.doc文件 / Successfully converted .doc file using catdoc: {file_path}")
+                return result.stdout
+        except FileNotFoundError:
+            logger.debug("catdoc未安装 / catdoc not installed")
+        except Exception as e:
+            logger.warning(f"catdoc转换失败 / catdoc conversion failed: {e}")
+        
+        # 方法4: 使用 olefile 进行基本文本提取
+        # Method 4: Use olefile for basic text extraction
+        if OLEFILE_AVAILABLE:
+            try:
+                ole = olefile.OleFileIO(file_path)
+                
+                # 尝试读取 WordDocument 流
+                # Try to read WordDocument stream
+                if ole.exists('WordDocument'):
+                    # 读取所有文本流 / Read all text streams
+                    text_parts = []
+                    
+                    # 尝试从多个可能的位置提取文本
+                    # Try to extract text from multiple possible locations
+                    for stream_name in ole.listdir():
+                        stream_path = '/'.join(stream_name)
+                        try:
+                            if any(keyword in stream_path.lower() for keyword in ['word', 'text', 'content', 'data']):
+                                data = ole.openstream(stream_name).read()
+                                # 尝试提取可读文本 / Try to extract readable text
+                                text = self._extract_text_from_binary(data)
+                                if text.strip():
+                                    text_parts.append(text)
+                        except Exception:
+                            continue
+                    
+                    ole.close()
+                    
+                    if text_parts:
+                        logger.info(f"使用olefile成功转换.doc文件 / Successfully converted .doc file using olefile: {file_path}")
+                        return "\n\n".join(text_parts)
+                
+                ole.close()
+                
+            except Exception as e:
+                logger.warning(f"olefile转换失败 / olefile conversion failed: {e}")
+        
+        # 方法5: 最后尝试直接二进制文本提取
+        # Method 5: Last resort - direct binary text extraction
+        try:
+            with open(file_path, 'rb') as f:
+                raw_data = f.read()
+            text = self._extract_text_from_binary(raw_data)
+            if text.strip():
+                logger.info(f"使用二进制提取成功转换.doc文件 / Successfully converted .doc file using binary extraction: {file_path}")
+                return text
+        except Exception as e:
+            logger.warning(f"二进制文本提取失败 / Binary text extraction failed: {e}")
+        
+        raise ValueError(
+            f"无法读取.doc文件 / Cannot read .doc file: {file_path}\n"
+            f"请安装以下工具之一 / Please install one of the following:\n"
+            f"- Windows: pip install pywin32 (需要安装Microsoft Word / requires MS Word)\n"
+            f"- Linux/Mac: sudo apt-get install antiword 或 catdoc\n"
+            f"- 跨平台 / Cross-platform: pip install olefile"
+        )
+    
+    def _extract_text_from_binary(self, data: bytes) -> str:
+        """
+        从二进制数据中提取可读文本 / Extract readable text from binary data
+        
+        Args:
+            data: 二进制数据 / Binary data
+            
+        Returns:
+            str: 提取的文本 / Extracted text
+        """
+        # 尝试多种编码 / Try multiple encodings
+        encodings = ['utf-16-le', 'utf-8', 'cp1252', 'gbk', 'latin-1']
+        
+        for encoding in encodings:
+            try:
+                text = data.decode(encoding, errors='ignore')
+                # 过滤不可打印字符，保留中文和常见字符
+                # Filter non-printable characters, keep Chinese and common characters
+                import re
+                # 保留可打印ASCII、中文、常见标点
+                # Keep printable ASCII, Chinese, common punctuation
+                cleaned = re.sub(r'[^\x20-\x7E\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\n\r\t]', ' ', text)
+                # 压缩多余空格 / Compress extra spaces
+                cleaned = re.sub(r' {3,}', '  ', cleaned)
+                cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+                
+                # 检查是否有足够的可读内容 / Check if there's enough readable content
+                if len(cleaned.strip()) > 50:
+                    return cleaned.strip()
+            except Exception:
+                continue
+        
+        return ""
+    
+    def convert_ppt_legacy(self, file_path: str) -> str:
+        """
+        转换老式PowerPoint文档(.ppt) / Convert legacy PowerPoint document (.ppt)
+        
+        Args:
+            file_path: .ppt文件路径 / .ppt file path
+            
+        Returns:
+            str: 提取的文本内容 / Extracted text content
+        """
+        file_name = Path(file_path).stem
+        md_content = []
+        
+        # 方法1: 使用 pywin32 (Windows COM接口)
+        # Method 1: Use pywin32 (Windows COM interface)
+        if PYWIN32_AVAILABLE and platform.system() == 'Windows':
+            try:
+                pythoncom.CoInitialize()
+                try:
+                    ppt = win32com.client.Dispatch("PowerPoint.Application")
+                    ppt.Visible = False
+                    
+                    # 打开演示文稿 / Open presentation
+                    presentation = ppt.Presentations.Open(os.path.abspath(file_path), WithWindow=False)
+                    
+                    # 遍历幻灯片 / Iterate through slides
+                    for slide_idx, slide in enumerate(presentation.Slides, 1):
+                        md_content.append(f"\n--- Slide {slide_idx} ---\n")
+                        
+                        # 提取形状中的文本 / Extract text from shapes
+                        for shape in slide.Shapes:
+                            if shape.HasTextFrame:
+                                if shape.TextFrame.HasText:
+                                    text = shape.TextFrame.TextRange.Text
+                                    if text.strip():
+                                        md_content.append(text)
+                    
+                    presentation.Close()
+                    ppt.Quit()
+                    
+                    logger.info(f"使用pywin32成功转换.ppt文件 / Successfully converted .ppt file using pywin32: {file_path}")
+                    return "\n\n".join(md_content)
+                    
+                finally:
+                    pythoncom.CoUninitialize()
+                    
+            except Exception as e:
+                logger.warning(f"pywin32转换.ppt失败，尝试其他方法 / pywin32 .ppt conversion failed, trying other methods: {e}")
+        
+        # 方法2: 使用 olefile 进行基本文本提取
+        # Method 2: Use olefile for basic text extraction
+        if OLEFILE_AVAILABLE:
+            try:
+                ole = olefile.OleFileIO(file_path)
+                
+                text_parts = []
+                for stream_name in ole.listdir():
+                    stream_path = '/'.join(stream_name)
+                    try:
+                        if any(keyword in stream_path.lower() for keyword in ['powerpoint', 'text', 'current']):
+                            data = ole.openstream(stream_name).read()
+                            text = self._extract_text_from_binary(data)
+                            if text.strip():
+                                text_parts.append(text)
+                    except Exception:
+                        continue
+                
+                ole.close()
+                
+                if text_parts:
+                    logger.info(f"使用olefile成功转换.ppt文件 / Successfully converted .ppt file using olefile: {file_path}")
+                    return "\n\n".join(text_parts)
+                    
+            except Exception as e:
+                logger.warning(f"olefile转换.ppt失败 / olefile .ppt conversion failed: {e}")
+        
+        raise ValueError(
+            f"无法读取.ppt文件 / Cannot read .ppt file: {file_path}\n"
+            f"请安装以下工具之一 / Please install one of the following:\n"
+            f"- Windows: pip install pywin32 (需要安装Microsoft PowerPoint / requires MS PowerPoint)\n"
+            f"- 跨平台 / Cross-platform: pip install olefile"
+        )
     
     def convert_ppt(self, file_path: str) -> str:
         """
@@ -590,10 +898,14 @@ class DocumentConverter:
         # 根据扩展名选择转换方法 / Select conversion method by extension
         if ext == '.pdf':
             content = self.convert_pdf(file_path)
-        elif ext in ['.docx', '.doc']:
+        elif ext == '.docx':
             content = self.convert_word(file_path)
+        elif ext == '.doc':
+            content = self.convert_doc_legacy(file_path)
         elif ext == '.pptx':
             content = self.convert_ppt(file_path)
+        elif ext == '.ppt':
+            content = self.convert_ppt_legacy(file_path)
         elif ext == '.txt':
             content = self.convert_txt(file_path)
         elif ext == '.md':
