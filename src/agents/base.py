@@ -235,29 +235,16 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _call_llm(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """
-        调用LLM / Call LLM with enforced timeout
+        调用LLM / Call LLM
         """
         try:
-            def _call():
-                return self.client.chat.completions.create(
-                    model=self.config.model.effective_model_name,
-                    messages=messages,
-                    tools=self._get_tools_for_api() if self.tools else None,
-                    temperature=self.config.model.temperature,
-                    max_tokens=self.config.model.max_tokens,
-                )
-
-            timeout = max(5, int(self.config.model.timeout))
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_call)
-                try:
-                    response = future.result(timeout=timeout + 5)
-                    return response
-                except concurrent.futures.TimeoutError:
-                    logger.error(f"LLM调用超时 / LLM call timeout after {timeout + 5}s")
-                    future.cancel()
-                    raise TimeoutError(f"LLM call timeout after {timeout + 5}s")
-
+            return self.client.chat.completions.create(
+                model=self.config.model.effective_model_name,
+                messages=messages,
+                tools=self._get_tools_for_api() if self.tools else None,
+                temperature=self.config.model.temperature,
+                max_tokens=self.config.model.max_tokens,
+            )
         except Exception as e:
             logger.error(f"LLM调用失败 / LLM call failed: {str(e)}")
             raise
