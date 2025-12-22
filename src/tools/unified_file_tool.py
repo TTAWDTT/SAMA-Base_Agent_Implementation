@@ -147,6 +147,7 @@ class FileTool(BaseTool):
     """
     
     name: str = "file"
+    subprocess_safe: bool = True
     
     description: str = """文件操作工具，支持读取、写入、列目录。
 
@@ -395,6 +396,7 @@ Unified tool for file read, write, and directory listing. Supports auto-creating
                 self.logger.info(f"创建目录 / Created directory: {parent_dir}")
             
             # 备份原文件 / Backup original file
+            backup_path = None
             if backup and os.path.exists(abs_path):
                 backup_path = f"{abs_path}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 shutil.copy2(abs_path, backup_path)
@@ -413,7 +415,7 @@ Unified tool for file read, write, and directory listing. Supports auto-creating
             result += f"文件大小 / File size: {file_size} bytes\n"
             result += f"内容长度 / Content length: {len(content)} characters"
             
-            if backup and os.path.exists(f"{abs_path}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"):
+            if backup_path:
                 result += f"\n备份文件 / Backup file: {backup_path}"
             
             return result

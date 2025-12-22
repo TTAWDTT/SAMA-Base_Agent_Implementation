@@ -43,6 +43,11 @@ class ModelConfig(BaseModel):
         gt=0,
         description="最大token数 / Maximum tokens"
     )
+    max_model_tokens: Optional[int] = Field(
+        default=None,
+        gt=0,
+        description="模型token上限（用于裁剪）/ Model token cap for clamping"
+    )
     timeout: int = Field(
         default=120,
         gt=0,
@@ -53,6 +58,31 @@ class ModelConfig(BaseModel):
     def effective_model_name(self) -> str:
         """获取有效的模型名称 / Get effective model name"""
         return self.main_model_name or self.model_name
+
+    @property
+    def effective_max_tokens(self) -> int:
+        """获取裁剪后的最大token数 / Get clamped max tokens"""
+        cap = self.max_model_tokens or self._infer_model_token_cap()
+        if cap:
+            return min(self.max_tokens, cap)
+        return self.max_tokens
+
+    def _infer_model_token_cap(self) -> Optional[int]:
+        """
+        根据模型名称推断token上限
+        """
+        name = (self.effective_model_name or "").lower()
+        if "128k" in name:
+            return 131072
+        if "64k" in name:
+            return 65536
+        if "32k" in name:
+            return 32768
+        if "16k" in name:
+            return 16384
+        if "8k" in name:
+            return 8192
+        return None
 
 
 class AgentConfig(BaseModel):
@@ -163,6 +193,16 @@ class MemoryConfig(BaseModel):
         description="上下文最大token数（估算）/ Maximum context tokens (estimated)"
     )
     type: str = Field(default="buffer", description="记忆类型 / Memory type")
+    summary_keep_last_n: int = Field(
+        default=20,
+        gt=0,
+        description="摘要模式保留的最近消息数 / Keep last N messages in summary mode"
+    )
+    summary_max_chars: int = Field(
+        default=4000,
+        gt=0,
+        description="摘要最大字符数 / Maximum summary characters"
+    )
 
 
 class Config(BaseModel):

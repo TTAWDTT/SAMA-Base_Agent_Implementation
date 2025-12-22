@@ -143,6 +143,7 @@ class PythonTool(BaseTool):
     """
     
     name: str = "python"
+    subprocess_safe: bool = True
     
     description: str = """Python代码执行工具，执行Python代码并返回结果。
 
@@ -256,6 +257,14 @@ Executes Python code and returns results. Supports direct execution, save and ex
         # REPL模式的持久化环境 / Persistent environment for REPL mode
         self._globals = {}
         self._locals = {}
+
+    def should_run_in_subprocess(self, arguments: dict) -> bool:
+        """
+        持久化模式需要保留上下文，避免子进程执行
+        """
+        if arguments.get("persistent"):
+            return False
+        return self.subprocess_safe
     
     def _run(
         self,

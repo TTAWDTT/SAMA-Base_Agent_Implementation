@@ -48,6 +48,9 @@ class BaseTool(ABC):
     
     # 输入参数Schema / Input parameter schema
     input_schema: Optional[Type[ToolInput]] = None
+
+    # 是否允许子进程隔离执行
+    subprocess_safe: bool = False
     
     def __init__(self):
         """初始化工具 / Initialize tool"""
@@ -239,6 +242,12 @@ class BaseTool(ABC):
         }
         
         return schema
+
+    def should_run_in_subprocess(self, arguments: Dict[str, Any]) -> bool:
+        """
+        判断是否需要在子进程执行
+        """
+        return self.subprocess_safe
     
     def __str__(self) -> str:
         return f"Tool(name={self.name})"

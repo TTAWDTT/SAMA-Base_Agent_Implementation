@@ -94,6 +94,7 @@ class ShellTool(BaseTool):
     """
     
     name: str = "shell"
+    subprocess_safe: bool = True
     
     description: str = """Shell命令执行工具，在系统Shell中执行命令并返回结果。
 
@@ -195,6 +196,19 @@ Executes commands in system shell and returns results. Supports Windows and Unix
         "chown -R",
         "> /dev/sda",
     ]
+
+    # 禁止的命令控制符，避免链式执行或重定向绕过
+    FORBIDDEN_TOKENS = [
+        "&&",
+        "||",
+        "|",
+        ";",
+        ">",
+        "<",
+        "&",
+        "\n",
+        "\r",
+    ]
     
     def __init__(
         self,
@@ -238,6 +252,11 @@ Executes commands in system shell and returns results. Supports Windows and Unix
         Returns:
             tuple[bool, str]: (是否允许, 原因) / (is allowed, reason)
         """
+        # 阻断链式执行与重定向
+        for token in self.FORBIDDEN_TOKENS:
+            if token in command:
+                return False, f"命令包含禁止的控制符: {token}"
+
         # 检查危险命令 / Check dangerous commands
         for dangerous in self.DANGEROUS_COMMANDS:
             if dangerous in command:

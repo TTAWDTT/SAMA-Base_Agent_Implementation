@@ -18,6 +18,9 @@ import time
 import re
 import os
 import concurrent.futures
+import importlib
+import multiprocessing
+import queue as queue_module
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 
@@ -39,6 +42,20 @@ from src.tools import DEFAULT_TOOLS, BaseTool
 from src.utils.helpers import format_tool_result, generate_request_id, is_search_result, refine_search_result
 
 logger = get_logger("agents.base")
+
+
+def _run_tool_in_subprocess(module_name: str, class_name: str, arguments: Dict[str, Any], result_queue) -> None:
+    """
+    在子进程中执行工具，返回原始输出与错误信息
+    """
+    try:
+        module = importlib.import_module(module_name)
+        tool_cls = getattr(module, class_name)
+        tool = tool_cls()
+        output = tool._run(**arguments)
+        result_queue.put({"status": "success", "output": output})
+    except Exception as e:
+        result_queue.put({"status": "error", "error": str(e)})
 
 
 class BaseAgent:
@@ -93,17 +110,14 @@ class BaseAgent:
         
         # 设置系统提示词 / Set system prompt
         if system_prompt:
-            self.system_prompt = system_prompt
+            self.base_system_prompt = system_prompt
         else:
-            self.system_prompt = get_system_prompt(
+            self.base_system_prompt = get_system_prompt(
                 tools=list(self.tools.values()),
                 language=self.config.agent.prompt_language
             )
         
-        # 注入工作区信息到系统提示词 / Inject workspace info into system prompt
-        self._inject_workspace_to_prompt()
-        
-        self.memory.set_system_message(self.system_prompt)
+        self._refresh_system_message()
         
         # 初始化OpenAI客户端 / Initialize OpenAI client
         self._init_client()
@@ -112,6 +126,7 @@ class BaseAgent:
         self.state = AgentState.IDLE
         self.current_step = 0
         self.steps: List[AgentStep] = []
+        self._max_tokens_warned = False
         
         # 显式上下文模式 / Explicit context mode
         self.verbose_context = False  # 是否显示详细上下文 / Whether to show detailed context
@@ -131,12 +146,9 @@ class BaseAgent:
         self.workspace = str(workspace_path.resolve())
         logger.info(f"工作区已初始化 / Workspace initialized: {self.workspace}")
     
-    def _inject_workspace_to_prompt(self) -> None:
+    def _build_workspace_section(self) -> str:
         """
-        将工作区信息注入到系统提示词 / Inject workspace info into system prompt
-        
-        告知Agent可以使用的工作区路径和文件上下文管理能力
-        Inform Agent about available workspace path and file context management capabilities
+        构建工作区提示信息
         """
         workspace_section = f"""
 
@@ -164,7 +176,20 @@ You can create, modify and manage files in the workspace. For important intermed
 - 如果某个工具已经成功调用过，分析结果而不是重复调用 / If a tool has been called successfully, analyze the result instead of calling again
 - 每次操作前，先检查工作记忆中是否已有相关结果 / Before each operation, check if results already exist in working memory
 """
-        self.system_prompt += workspace_section
+        return workspace_section
+
+    def _compose_system_prompt(self) -> str:
+        """
+        组合完整系统提示词
+        """
+        return self.base_system_prompt + self._build_workspace_section()
+
+    def _refresh_system_message(self) -> None:
+        """
+        刷新系统消息内容
+        """
+        self.system_prompt = self._compose_system_prompt()
+        self.memory.set_system_message(self.system_prompt)
     
     def _extract_thinking(self, content: str) -> Optional[str]:
         """
@@ -237,17 +262,71 @@ You can create, modify and manage files in the workspace. For important intermed
         """
         调用LLM / Call LLM
         """
-        try:
-            return self.client.chat.completions.create(
-                model=self.config.model.effective_model_name,
-                messages=messages,
-                tools=self._get_tools_for_api() if self.tools else None,
-                temperature=self.config.model.temperature,
-                max_tokens=self.config.model.max_tokens,
+        max_retries = getattr(self.config.model, "max_retries", 2)
+        backoff_base = getattr(self.config.model, "retry_backoff_base", 1.5)
+        backoff_max = getattr(self.config.model, "retry_backoff_max", 8.0)
+        last_error = None
+        max_tokens = self.config.model.effective_max_tokens
+        if max_tokens != self.config.model.max_tokens and not self._max_tokens_warned:
+            logger.warning(
+                f"max_tokens 已裁剪 / max_tokens clamped: {self.config.model.max_tokens} -> {max_tokens}"
             )
-        except Exception as e:
-            logger.error(f"LLM调用失败 / LLM call failed: {str(e)}")
-            raise
+            self._max_tokens_warned = True
+
+        for attempt in range(max_retries + 1):
+            try:
+                return self.client.chat.completions.create(
+                    model=self.config.model.effective_model_name,
+                    messages=messages,
+                    tools=self._get_tools_for_api() if self.tools else None,
+                    temperature=self.config.model.temperature,
+                    max_tokens=max_tokens,
+                )
+            except Exception as e:
+                last_error = e
+                if attempt >= max_retries or not self._should_retry(e):
+                    logger.error(f"LLM调用失败 / LLM call failed: {str(e)}")
+                    raise
+                delay = min(backoff_base * (2 ** attempt), backoff_max)
+                logger.warning(f"LLM调用失败，准备重试 / Retry LLM call: {str(e)}")
+                time.sleep(delay)
+
+        logger.error(f"LLM调用失败 / LLM call failed: {str(last_error)}")
+        raise last_error
+
+    def _should_retry(self, error: Exception) -> bool:
+        """
+        判断是否需要重试
+        """
+        status_code = getattr(error, "status_code", None)
+        if status_code in {429, 500, 502, 503, 504}:
+            return True
+        if isinstance(error, TimeoutError):
+            return True
+        message = str(error).lower()
+        if "timeout" in message or "rate limit" in message or "temporarily" in message:
+            return True
+        return False
+
+    def _extract_token_usage(self, response: Any) -> int:
+        """
+        提取响应中的token使用量
+        """
+        usage = getattr(response, "usage", None)
+        if not usage:
+            return 0
+
+        total_tokens = getattr(usage, "total_tokens", None)
+        if total_tokens is None and isinstance(usage, dict):
+            total_tokens = usage.get("total_tokens")
+
+        if total_tokens is None:
+            return 0
+
+        try:
+            return int(total_tokens)
+        except (TypeError, ValueError):
+            return 0
     
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         """
@@ -269,6 +348,10 @@ You can create, modify and manage files in the workspace. For important intermed
         tool_timeout = getattr(tool, "default_timeout", None)
         if tool_timeout is None:
             tool_timeout = getattr(self.config.tools.code_executor, "timeout", 30)
+
+        if tool.should_run_in_subprocess(arguments):
+            return self._execute_tool_in_subprocess(tool, arguments, tool_timeout)
+
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(tool.run, **arguments)
             try:
@@ -296,6 +379,69 @@ You can create, modify and manage files in the workspace. For important intermed
         logger.info(f"工具执行完成 / Tool execution completed: {tool_name}, 状态/status: {getattr(result, 'status', 'unknown')}")
         
         return result
+
+    def _execute_tool_in_subprocess(
+        self,
+        tool: BaseTool,
+        arguments: Dict[str, Any],
+        timeout: int
+    ) -> ToolResult:
+        """
+        使用子进程执行工具，超时可强制终止
+        """
+        start_time = time.time()
+        module_name = tool.__class__.__module__
+        class_name = tool.__class__.__name__
+        ctx = multiprocessing.get_context("spawn")
+        result_queue = ctx.Queue()
+        process = ctx.Process(
+            target=_run_tool_in_subprocess,
+            args=(module_name, class_name, arguments, result_queue)
+        )
+        process.start()
+        process.join(timeout)
+
+        if process.is_alive():
+            process.terminate()
+            process.join(1)
+            logger.error(f"工具执行超时 / Tool execution timeout: {tool.name} after {timeout}s")
+            return ToolResult(
+                tool_name=tool.name,
+                status=ToolResultStatus.TIMEOUT,
+                output=None,
+                error_message=f"Tool execution timeout after {timeout}s",
+                execution_time=timeout
+            )
+
+        try:
+            payload = result_queue.get_nowait()
+        except queue_module.Empty:
+            logger.error(f"工具子进程未返回结果 / Tool subprocess returned no result: {tool.name}")
+            return ToolResult(
+                tool_name=tool.name,
+                status=ToolResultStatus.ERROR,
+                output=None,
+                error_message="Tool subprocess returned no result",
+                execution_time=time.time() - start_time
+            )
+
+        if payload.get("status") == "success":
+            return ToolResult(
+                tool_name=tool.name,
+                status=ToolResultStatus.SUCCESS,
+                output=payload.get("output"),
+                execution_time=time.time() - start_time
+            )
+
+        error_message = payload.get("error") or "Unknown error"
+        logger.error(f"工具执行失败 / Tool execution failed: {error_message}")
+        return ToolResult(
+            tool_name=tool.name,
+            status=ToolResultStatus.ERROR,
+            output=None,
+            error_message=error_message,
+            execution_time=time.time() - start_time
+        )
     
     def _process_tool_calls(self, tool_calls: List[Any]) -> List[ToolResult]:
         """
@@ -382,6 +528,7 @@ You can create, modify and manage files in the workspace. For important intermed
         """
         start_time = time.time()
         request_id = generate_request_id()
+        total_tokens_used = 0
         
         logger.info(f"开始处理请求 / Starting request: {request_id}")
         logger.debug(f"用户输入 / User input: {user_input}")
@@ -401,6 +548,8 @@ You can create, modify and manage files in the workspace. For important intermed
                 
                 logger.info(f"迭代 / Iteration {self.current_step}/{self.config.agent.max_iterations}")
                 
+                # 刷新系统消息与上下文 / Refresh system message and context
+                self._refresh_system_message()
                 # 获取对话历史 / Get conversation history
                 messages = self.memory.get_openai_messages()
                 
@@ -416,11 +565,11 @@ You can create, modify and manage files in the workspace. For important intermed
                     logger.error(f"LLM 超时：{str(te)}")
                     # 将错误信息反馈给用户并终止
                     self.memory.add_assistant_message("[系统] LLM 调用超时，请稍后重试。")
-                    return AgentResponse(success=False, final_answer="LLM 调用超时，请稍后重试。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message=str(te))
+                    return AgentResponse(success=False, final_answer="LLM 调用超时，请稍后重试。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=total_tokens_used, execution_time=time.time()-start_time, error_message=str(te))
                 except Exception as e:
                     logger.error(f"LLM 调用失败：{str(e)}")
                     self.memory.add_assistant_message(f"[系统] LLM 调用失败：{str(e)}")
-                    return AgentResponse(success=False, final_answer=f"LLM 调用失败：{str(e)}", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message=str(e))
+                    return AgentResponse(success=False, final_answer=f"LLM 调用失败：{str(e)}", steps=self.steps, total_iterations=self.current_step, total_tokens_used=total_tokens_used, execution_time=time.time()-start_time, error_message=str(e))
                 
                 # 解析响应 / Parse response
                 # 保护性检查响应是否为空或格式异常
@@ -431,6 +580,7 @@ You can create, modify and manage files in the workspace. For important intermed
                 
                 choice = response.choices[0]
                 message = choice.message
+                total_tokens_used += self._extract_token_usage(response)
                 
                 # 提取 thinking（Extended Thinking）/ Extract thinking
                 content = getattr(message, 'content', None) or getattr(message, 'text', '') or ""
@@ -538,7 +688,7 @@ You can create, modify and manage files in the workspace. For important intermed
                         final_answer=final_answer,
                         steps=self.steps,
                         total_iterations=self.current_step,
-                        total_tokens_used=0,
+                        total_tokens_used=total_tokens_used,
                         execution_time=execution_time
                     )
             
@@ -553,7 +703,7 @@ You can create, modify and manage files in the workspace. For important intermed
                 final_answer="达到最大迭代次数，任务未完成。/ Reached max iterations, task not completed.",
                 steps=self.steps,
                 total_iterations=self.current_step,
-                total_tokens_used=0,
+                total_tokens_used=total_tokens_used,
                 execution_time=execution_time,
                 error_message="Max iterations reached"
             )
@@ -569,7 +719,7 @@ You can create, modify and manage files in the workspace. For important intermed
                 final_answer=f"执行过程中发生错误 / Error during execution: {str(e)}",
                 steps=self.steps,
                 total_iterations=self.current_step,
-                total_tokens_used=0,
+                total_tokens_used=total_tokens_used,
                 execution_time=execution_time,
                 error_message=str(e)
             )
@@ -604,11 +754,11 @@ You can create, modify and manage files in the workspace. For important intermed
         logger.info(f"添加工具 / Added tool: {tool_instance.name}")
         
         # 更新系统提示词 / Update system prompt
-        self.system_prompt = get_system_prompt(
+        self.base_system_prompt = get_system_prompt(
             tools=list(self.tools.values()),
             language=self.config.agent.prompt_language
         )
-        self.memory.set_system_message(self.system_prompt)
+        self._refresh_system_message()
     
     def remove_tool(self, tool_name: str) -> bool:
         """
@@ -625,11 +775,11 @@ You can create, modify and manage files in the workspace. For important intermed
             logger.info(f"移除工具 / Removed tool: {tool_name}")
             
             # 更新系统提示词 / Update system prompt
-            self.system_prompt = get_system_prompt(
+            self.base_system_prompt = get_system_prompt(
                 tools=list(self.tools.values()),
                 language=self.config.agent.prompt_language
             )
-            self.memory.set_system_message(self.system_prompt)
+            self._refresh_system_message()
             return True
         
         return False

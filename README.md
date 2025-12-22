@@ -75,6 +75,25 @@ source venv/bin/activate  # Linux/macOS
 pip install -r requirements.txt
 ```
 
+如需按模块安装：
+
+```bash
+# 仅核心依赖
+pip install -r requirements-core.txt
+
+# 工具依赖（搜索等）
+pip install -r requirements-tools.txt
+
+# GAIA 与文档处理依赖
+pip install -r requirements-gaia.txt
+
+# 开发依赖
+pip install -r requirements-dev.txt
+
+# 可选依赖
+pip install -r requirements-optional.txt
+```
+
 ### 2. 配置 API 密钥 / Configure API Key
 
 编辑 `config.yaml` 文件，填入您的 API 密钥：
@@ -86,7 +105,7 @@ model:
   model_name: "moonshot-v1-128k"
 ```
 
-建议将真实密钥写入 `config.local.yaml`（已在 `.gitignore` 中），避免提交到仓库。
+建议将真实密钥写入 `config.local.yaml`（已在 `.gitignore` 中），避免提交到仓库，`config.yaml` 保持占位值即可。
 
 或者设置环境变量：
 

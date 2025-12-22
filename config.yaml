@@ -5,7 +5,7 @@
 # 模型配置 / Model Configuration
 model:
   # API密钥 / API Key 
-  api_key: 9a11d204-c61c-4931-b5e7-e1760f297e6f
+  api_key: "your-api-key-here"
   
   # API基础URL / API Base URL
   # Kimi K2 Thinking 使用 OpenAI 兼容接口
@@ -21,6 +21,9 @@ model:
   
   # 最大token数 / Maximum tokens
   max_tokens: 262144
+
+  # 模型token上限（用于裁剪）/ Model token cap for clamping
+  max_model_tokens: 131072
   
   # 请求超时（秒）/ Request timeout (seconds)
   timeout: 480                                                                                
@@ -105,7 +108,7 @@ tools:
   search_tool:
     enabled: true
     # 搜索API配置 / Search API configuration
-    api_key: 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
+    api_key: "your-search-api-key-here"
     engine: tavily
 
 # 日志配置 / Logging Configuration
@@ -135,6 +138,12 @@ memory:
   # buffer: 简单缓冲, summary: 摘要记忆
   # buffer: simple buffer, summary: summary memory
   type: "buffer"
+
+  # 摘要模式保留的最近消息数 / Keep last N messages in summary mode
+  summary_keep_last_n: 20
+
+  # 摘要最大字符数 / Maximum summary characters
+  summary_max_chars: 4000
 
 # 路径配置 / Path Configuration
 paths:

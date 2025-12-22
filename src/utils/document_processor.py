@@ -958,8 +958,9 @@ class DocumentConverter:
                 content, output_path = self.convert(file_path)
                 output_paths.append(output_path)
                 
-                # 构建内容（去除换行以节省空间）/ Build content (remove newlines to save space)
-                contents.append(f"文件 {output_path} 的内容:\n{content.replace(chr(10), ' ')}")
+                # 构建内容摘要，保留结构信息
+                excerpt = self._build_context_excerpt(content)
+                contents.append(f"文件 {output_path} 的内容:\n{excerpt}")
                 
             except Exception as e:
                 logger.error(f"文件处理失败 / File processing failed: {file_path}, 错误 / Error: {e}")
@@ -973,8 +974,18 @@ class DocumentConverter:
             "file_count": len(output_paths) - image_count,
             "image_count": image_count,
             "files": output_paths,
-            "content": " ".join(contents)
+            "content": "\n\n".join(contents)
         }
+
+    def _build_context_excerpt(self, content: str, max_chars: int = 2000) -> str:
+        """
+        构建可读的内容摘要，保留首尾结构
+        """
+        if len(content) <= max_chars:
+            return content
+        head_len = max_chars // 2
+        tail_len = max_chars - head_len
+        return content[:head_len] + "\n[... 内容过长已截断 ...]\n" + content[-tail_len:]
     
     def cleanup(self) -> None:
         """

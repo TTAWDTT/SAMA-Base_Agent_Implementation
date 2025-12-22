@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.core.config import get_config
-from src.utils.helpers import estimate_tokens
+from src.utils.helpers import estimate_tokens, truncate_text
 
 
 @dataclass
@@ -104,9 +104,13 @@ class ConversationMemory:
         config = get_config()
         self.max_entries = max_entries or config.memory.max_entries
         self.max_context_tokens = config.memory.max_context_tokens
+        self.memory_type = config.memory.type
+        self.summary_keep_last_n = config.memory.summary_keep_last_n
+        self.summary_max_chars = config.memory.summary_max_chars
         self.messages: List[Message] = []
         self.system_message: Optional[Message] = None
         self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径 / File context dict, key is file path
+        self.summary = ""
     
     def set_system_message(self, content: str) -> None:
         """
@@ -169,10 +173,14 @@ class ConversationMemory:
         )
         self.messages.append(message)
         
-        # 如果超过最大条数，删除最早的消息（保留系统消息）
-        # If exceeds max entries, remove oldest messages (keep system message)
-        while len(self.messages) > self.max_entries:
-            self.messages.pop(0)
+        # 根据记忆类型处理长度
+        if self.memory_type == "summary":
+            self._summarize_if_needed()
+        else:
+            # 如果超过最大条数，删除最早的消息（保留系统消息）
+            # If exceeds max entries, remove oldest messages (keep system message)
+            while len(self.messages) > self.max_entries:
+                self.messages.pop(0)
     
     def get_messages(self) -> List[Message]:
         """
@@ -203,13 +211,20 @@ class ConversationMemory:
         if self.system_message:
             messages.append(self.system_message.to_openai_format())
         
-        # 2. 添加文件内容作为独立消息 / Add file contents as separate messages
+        # 2. 添加摘要消息（可选）/ Add summary message if present
+        if self.summary:
+            messages.append({
+                "role": "system",
+                "content": "## 对话摘要 / Conversation Summary\n" + self.summary
+            })
+
+        # 3. 添加文件内容作为独立消息 / Add file contents as separate messages
         if self.files:
             file_context_msg = self._build_file_context_message()
             if file_context_msg:
                 messages.append(file_context_msg)
         
-        # 3. 添加对话历史 / Add conversation history
+        # 4. 添加对话历史 / Add conversation history
         for msg in self.messages:
             messages.append(msg.to_openai_format())
         
@@ -228,13 +243,8 @@ class ConversationMemory:
         pinned = []
         idx = 0
 
-        # 保留系统消息 / Always keep system message
-        if messages[0].get("role") == "system":
-            pinned.append(messages[0])
-            idx = 1
-
-        # 保留文件上下文消息（如果存在）/ Keep file context message if present
-        if idx < len(messages) and messages[idx].get("role") == "system":
+        # 保留所有前置系统消息 / Keep all leading system messages
+        while idx < len(messages) and messages[idx].get("role") == "system":
             pinned.append(messages[idx])
             idx += 1
 
@@ -305,6 +315,7 @@ class ConversationMemory:
             keep_system: 是否保留系统消息 / Whether to keep system message
         """
         self.messages = []
+        self.summary = ""
         if not keep_system:
             self.system_message = None
     
@@ -513,6 +524,54 @@ class ConversationMemory:
             summary_lines.append(f"\n📁 当前文件数 / Files in context: {len(self.files)}")
         
         return "\n".join(summary_lines)
+
+    def _summarize_if_needed(self) -> None:
+        """
+        在摘要模式下压缩历史消息
+        """
+        if len(self.messages) <= self.max_entries:
+            return
+
+        keep_n = min(self.summary_keep_last_n, len(self.messages))
+        summarize_target = self.messages[:-keep_n]
+        if not summarize_target:
+            return
+
+        new_summary = self._build_summary_from_messages(summarize_target)
+        self.summary = self._merge_summary(self.summary, new_summary)
+        self.summary = self._trim_summary(self.summary)
+        self.messages = self.messages[-keep_n:]
+
+    def _build_summary_from_messages(self, messages: List[Message]) -> str:
+        """
+        生成消息摘要文本
+        """
+        lines = []
+        for msg in messages:
+            role_name = {
+                "user": "用户",
+                "assistant": "助手",
+                "tool": "工具"
+            }.get(msg.role, msg.role)
+            content = truncate_text(msg.content, 200)
+            lines.append(f"{role_name}: {content}")
+        return "\n".join(lines)
+
+    def _merge_summary(self, current: str, new_summary: str) -> str:
+        """
+        合并摘要内容
+        """
+        if not current:
+            return new_summary
+        return current + "\n" + new_summary
+
+    def _trim_summary(self, summary: str) -> str:
+        """
+        控制摘要长度
+        """
+        if len(summary) <= self.summary_max_chars:
+            return summary
+        return "..." + summary[-self.summary_max_chars:]
 
 
 # 全局记忆实例 / Global memory instance

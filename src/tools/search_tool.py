@@ -97,6 +97,7 @@ class WebSearchTool(BaseTool):
     """
     
     name: str = "web_search"
+    subprocess_safe: bool = True
     
     description: str = """网络搜索工具，执行网络搜索并返回结构化结果。
 
@@ -306,9 +307,14 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             str: JSON格式搜索结果 / Search results in JSON format
         """
         try:
-            from duckduckgo_search import ddgs
-            
-            raw_results = list(ddgs.text(query, max_results=max_results))
+            raw_results = None
+            try:
+                from duckduckgo_search import DDGS
+                with DDGS() as ddgs:
+                    raw_results = list(ddgs.text(query, max_results=max_results))
+            except ImportError:
+                from duckduckgo_search import ddgs
+                raw_results = list(ddgs.text(query, max_results=max_results))
             
             if not raw_results:
                 return json.dumps({
