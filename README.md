@@ -86,6 +86,8 @@ model:
   model_name: "moonshot-v1-128k"
 ```
 
+建议将真实密钥写入 `config.local.yaml`（已在 `.gitignore` 中），避免提交到仓库。
+
 或者设置环境变量：
 
 ```bash
