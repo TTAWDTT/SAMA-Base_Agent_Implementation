@@ -279,7 +279,9 @@ You can create, modify and manage files in the workspace. For important intermed
         logger.debug(f"参数 / Arguments: {arguments}")
         
         # 使用线程池为工具执行设置超时，避免阻塞主循环
-        tool_timeout = getattr(self.config.tools.code_executor, 'timeout', 30)
+        tool_timeout = getattr(tool, "default_timeout", None)
+        if tool_timeout is None:
+            tool_timeout = getattr(self.config.tools.code_executor, "timeout", 30)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(tool.run, **arguments)
             try:
