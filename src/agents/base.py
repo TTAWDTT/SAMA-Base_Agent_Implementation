@@ -345,20 +345,27 @@ You can create, modify and manage files in the workspace. For important intermed
                 call_id=call_id
             )
             
-            # 如果是文件相关工具，进行额外检查：确保目标文件在memory.files或路径存在
-            if tool_name in ("read_file", "write_file"):
-                file_path = arguments.get("file_path") or arguments.get("path") or arguments.get("file")
-                if file_path:
-                    # 优先检查内存上下文中的文件
-                    known_paths = [f.path for f in self.memory.list_files()]
-                    if file_path not in known_paths and not os.path.exists(file_path):
-                        logger.warning(f"文件工具调用使用了未知路径或不存在的文件，跳过: {file_path}")
-                        results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message=f"Unknown or missing file: {file_path}"))
-                        # 更新当前步骤
-                        if self.steps:
-                            self.steps[-1].tool_calls.append(call_record)
-                            self.steps[-1].tool_results.append(results[-1])
-                        continue
+            # 如果是文件相关工具，进行额外检查：仅在读取时确保目标文件在memory.files或路径存在
+            if tool_name in ("file", "read_file", "write_file"):
+                operation = str(arguments.get("operation", "")).lower()
+                if tool_name == "read_file":
+                    operation = "read"
+                elif tool_name == "write_file":
+                    operation = "write"
+
+                if operation == "read":
+                    file_path = arguments.get("file_path") or arguments.get("path") or arguments.get("file")
+                    if file_path:
+                        # 优先检查内存上下文中的文件
+                        known_paths = [f.path for f in self.memory.list_files()]
+                        if file_path not in known_paths and not os.path.exists(file_path):
+                            logger.warning(f"文件工具调用使用了未知路径或不存在的文件，跳过: {file_path}")
+                            results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message=f"Unknown or missing file: {file_path}"))
+                            # 更新当前步骤
+                            if self.steps:
+                                self.steps[-1].tool_calls.append(call_record)
+                                self.steps[-1].tool_results.append(results[-1])
+                            continue
 
             # 执行工具 / Execute tool
             result = self._execute_tool(tool_name, arguments)
