@@ -248,6 +248,12 @@ class BaseTool(ABC):
         判断是否需要在子进程执行
         """
         return self.subprocess_safe
+
+    def can_run_in_parallel(self, arguments: Dict[str, Any]) -> bool:
+        """
+        判断是否允许并行执行 / Whether tool can run in parallel
+        """
+        return True
     
     def __str__(self) -> str:
         return f"Tool(name={self.name})"

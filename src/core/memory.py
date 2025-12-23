@@ -7,7 +7,8 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+import re
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.core.config import get_config
 from src.utils.helpers import estimate_tokens, truncate_text
@@ -107,6 +108,13 @@ class ConversationMemory:
         self.memory_type = config.memory.type
         self.summary_keep_last_n = config.memory.summary_keep_last_n
         self.summary_max_chars = config.memory.summary_max_chars
+        self.system_token_ratio = config.memory.system_token_ratio
+        self.file_context_token_ratio = config.memory.file_context_token_ratio
+        self.history_token_ratio = config.memory.history_token_ratio
+        self.file_context_chunk_size = config.memory.file_context_chunk_size
+        self.file_context_max_chunks_per_file = config.memory.file_context_max_chunks_per_file
+        self.file_context_min_score = config.memory.file_context_min_score
+        self.file_context_query_messages = config.memory.file_context_query_messages
         self.messages: List[Message] = []
         self.system_message: Optional[Message] = None
         self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径 / File context dict, key is file path
@@ -198,74 +206,272 @@ class ConversationMemory:
         获取OpenAI格式的消息列表（包含文件上下文）/ Get messages in OpenAI format (including file context)
         
         消息顺序 / Message order:
-        1. 系统消息（包含文件摘要）/ System message (with file summary)
-        2. 文件内容消息（如果有）/ File content messages (if any)
-        3. 对话历史 / Conversation history
+        1. 系统消息 / System message
+        2. 摘要消息（可选）/ Summary message (optional)
+        3. 文件内容消息（可选）/ File context message (optional)
+        4. 对话历史 / Conversation history
         
         Returns:
             List[Dict]: OpenAI格式的消息列表 / List of messages in OpenAI format
         """
-        messages = []
-        
+        system_messages: List[Dict[str, Any]] = []
+        summary_message: Optional[Dict[str, Any]] = None
+
         # 1. 添加系统消息 / Add system message
         if self.system_message:
-            messages.append(self.system_message.to_openai_format())
-        
-        # 2. 添加摘要消息（可选）/ Add summary message if present
+            system_messages.append(self.system_message.to_openai_format())
+
+        # 2. 构建摘要消息（可选）/ Build summary message if present
         if self.summary:
-            messages.append({
+            summary_message = {
                 "role": "system",
                 "content": "## 对话摘要 / Conversation Summary\n" + self.summary
-            })
+            }
 
-        # 3. 添加文件内容作为独立消息 / Add file contents as separate messages
-        if self.files:
-            file_context_msg = self._build_file_context_message()
-            if file_context_msg:
-                messages.append(file_context_msg)
-        
-        # 4. 添加对话历史 / Add conversation history
-        for msg in self.messages:
-            messages.append(msg.to_openai_format())
-        
-        return self._trim_messages_to_token_limit(messages)
+        # 3. 构建对话历史 / Build conversation history
+        history_messages = [msg.to_openai_format() for msg in self.messages]
 
-    def _trim_messages_to_token_limit(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        query_text = self._get_recent_user_text(self.file_context_query_messages)
+        return self._trim_messages_to_token_limit(
+            system_messages,
+            summary_message,
+            history_messages,
+            query_text
+        )
+
+    def _trim_messages_to_token_limit(
+        self,
+        system_messages: List[Dict[str, Any]],
+        summary_message: Optional[Dict[str, Any]],
+        history_messages: List[Dict[str, Any]],
+        query_text: str
+    ) -> List[Dict[str, Any]]:
         """
-        根据token预算裁剪消息 / Trim messages to token budget
+        根据分层预算裁剪消息 / Trim messages by layered budget
         """
-        if not self.max_context_tokens:
-            return messages
-
-        if not messages:
-            return messages
-
-        pinned = []
-        idx = 0
-
-        # 保留所有前置系统消息 / Keep all leading system messages
-        while idx < len(messages) and messages[idx].get("role") == "system":
-            pinned.append(messages[idx])
-            idx += 1
-
         def _msg_tokens(msg: Dict[str, Any]) -> int:
             return estimate_tokens(msg.get("content", "") or "")
 
-        total_tokens = sum(_msg_tokens(msg) for msg in pinned)
-        remaining = messages[idx:]
-        kept = []
+        if not self.max_context_tokens:
+            file_context_msg = self._build_file_context_message(query_text=query_text)
+            messages = list(system_messages)
+            if summary_message:
+                messages.append(summary_message)
+            if file_context_msg:
+                messages.append(file_context_msg)
+            messages.extend(history_messages)
+            return messages
 
-        for msg in reversed(remaining):
-            msg_tokens = _msg_tokens(msg)
-            if total_tokens + msg_tokens > self.max_context_tokens:
+        messages = list(system_messages)
+
+        # 控制系统摘要预算 / Apply system summary budget
+        if summary_message:
+            system_budget = int(self.max_context_tokens * max(self.system_token_ratio, 0.0))
+            if system_budget < 0:
+                system_budget = 0
+            if sum(_msg_tokens(msg) for msg in messages + [summary_message]) <= system_budget:
+                messages.append(summary_message)
+
+        system_tokens = sum(_msg_tokens(msg) for msg in messages)
+        remaining = self.max_context_tokens - system_tokens
+        if remaining <= 0:
+            return messages
+
+        file_ratio, history_ratio = self._normalize_budget_ratios(
+            self.file_context_token_ratio,
+            self.history_token_ratio
+        )
+        file_budget = int(remaining * file_ratio)
+        file_context_msg = self._build_file_context_message(
+            query_text=query_text,
+            max_tokens=file_budget if file_budget > 0 else 0
+        )
+        if file_context_msg:
+            messages.append(file_context_msg)
+            remaining -= _msg_tokens(file_context_msg)
+
+        history_budget = max(0, remaining)
+        messages.extend(self._trim_history_messages(history_messages, history_budget))
+        return messages
+    
+    def _normalize_budget_ratios(self, file_ratio: float, history_ratio: float) -> Tuple[float, float]:
+        """
+        归一化文件/历史预算比例 / Normalize file/history budget ratios
+        """
+        safe_file = max(file_ratio, 0.0)
+        safe_history = max(history_ratio, 0.0)
+        total = safe_file + safe_history
+        if total <= 0:
+            return 0.35, 0.65
+        return safe_file / total, safe_history / total
+
+    def _trim_history_messages(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int
+    ) -> List[Dict[str, Any]]:
+        """
+        裁剪对话历史 / Trim conversation history to token budget
+        """
+        if max_tokens <= 0:
+            return []
+        kept = []
+        total = 0
+        for msg in reversed(messages):
+            msg_tokens = estimate_tokens(msg.get("content", "") or "")
+            if total + msg_tokens > max_tokens:
                 break
             kept.append(msg)
-            total_tokens += msg_tokens
-
+            total += msg_tokens
         kept.reverse()
-        return pinned + kept
-    
-    def _build_file_context_message(self) -> Optional[Dict[str, str]]:
+        return kept
+
+    def _get_recent_user_text(self, max_messages: int = 3) -> str:
+        """
+        汇总最近用户消息用于检索 / Build recent user text for retrieval
+        """
+        if max_messages <= 0:
+            return ""
+        texts = [msg.content for msg in self.messages if msg.role == "user"]
+        if not texts:
+            return ""
+        return "\n".join(texts[-max_messages:]).strip()
+
+    def _extract_query_terms(self, text: str) -> List[str]:
+        """
+        提取检索关键词 / Extract query terms
+        """
+        if not text:
+            return []
+        tokens = re.findall(r"[A-Za-z0-9_]+|[\u4e00-\u9fff]+", text)
+        cleaned = []
+        for token in tokens:
+            token = token.strip().lower()
+            if not token:
+                continue
+            if token.isascii() and len(token) < 2:
+                continue
+            cleaned.append(token)
+        seen = set()
+        result = []
+        for token in cleaned:
+            if token in seen:
+                continue
+            seen.add(token)
+            result.append(token)
+        return result[:64]
+
+    def _chunk_text(self, text: str, max_chars: int) -> List[str]:
+        """
+        将文本按段落分块 / Chunk text by paragraphs
+        """
+        if not text:
+            return []
+        if max_chars <= 0:
+            return [text]
+        paragraphs = re.split(r"\n{2,}", text)
+        chunks = []
+        current = []
+        length = 0
+        for para in paragraphs:
+            para = para.strip()
+            if not para:
+                continue
+            para_len = len(para)
+            if para_len > max_chars:
+                if current:
+                    chunks.append("\n\n".join(current))
+                    current = []
+                    length = 0
+                for idx in range(0, para_len, max_chars):
+                    slice_text = para[idx:idx + max_chars].strip()
+                    if slice_text:
+                        chunks.append(slice_text)
+                continue
+            if length + para_len + (2 if current else 0) > max_chars and current:
+                chunks.append("\n\n".join(current))
+                current = [para]
+                length = para_len
+            else:
+                if current:
+                    length += 2 + para_len
+                else:
+                    length = para_len
+                current.append(para)
+        if current:
+            chunks.append("\n\n".join(current))
+        return chunks
+
+    def _score_chunk(self, chunk: str, terms: List[str]) -> int:
+        """
+        计算分块相关性得分 / Score chunk relevance
+        """
+        if not chunk or not terms:
+            return 0
+        chunk_lower = chunk.lower()
+        score = 0
+        for term in terms:
+            if term and term in chunk_lower:
+                score += 1
+        return score
+
+    def _select_relevant_chunks(self, content: str, query_text: str) -> List[str]:
+        """
+        基于检索关键词选择相关分块 / Select relevant chunks by query terms
+        """
+        chunks = self._chunk_text(content, self.file_context_chunk_size)
+        if not chunks:
+            return []
+        terms = self._extract_query_terms(query_text)
+        if not terms:
+            return chunks[: self.file_context_max_chunks_per_file]
+        scored = []
+        for idx, chunk in enumerate(chunks):
+            scored.append((self._score_chunk(chunk, terms), idx, chunk))
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        selected = [item for item in scored if item[0] >= self.file_context_min_score]
+        if not selected:
+            selected = scored[:1]
+        selected = selected[: self.file_context_max_chunks_per_file]
+        selected.sort(key=lambda item: item[1])
+        return [item[2] for item in selected]
+
+    def _build_file_block(
+        self,
+        file_ctx: FileContext,
+        query_text: str,
+        max_tokens: Optional[int]
+    ) -> Optional[str]:
+        """
+        构建单文件上下文块 / Build single file context block
+        """
+        lines = [f"### `{file_ctx.path}`"]
+        if file_ctx.abstract:
+            lines.append(f"**摘要**: {file_ctx.abstract}")
+        else:
+            lines.append("**摘要**: （无摘要 / no abstract）")
+
+        minimal_tokens = estimate_tokens("\n".join(lines + ["-" * 40]))
+        if max_tokens is not None and minimal_tokens > max_tokens:
+            return None
+
+        if file_ctx.content:
+            for chunk in self._select_relevant_chunks(file_ctx.content, query_text):
+                block = f"```\n{chunk}\n```"
+                if max_tokens is not None:
+                    candidate_tokens = estimate_tokens("\n".join(lines + [block, "-" * 40]))
+                    if candidate_tokens > max_tokens:
+                        break
+                lines.append(block)
+
+        lines.append("-" * 40)
+        return "\n".join(lines)
+
+    def _build_file_context_message(
+        self,
+        query_text: str = "",
+        max_tokens: Optional[int] = None
+    ) -> Optional[Dict[str, str]]:
         """
         构建包含文件内容的上下文消息 / Build message containing file contents
         
@@ -274,24 +480,34 @@ class ConversationMemory:
         """
         if not self.files:
             return None
-        
+
         file_contents = [
             "## 📁 当前文件上下文 / Current File Context\n",
-            f"共有 {len(self.files)} 个文件 / {len(self.files)} files in context\n"
+            f"共有 {len(self.files)} 个文件 / {len(self.files)} files in context",
+            "内容按相关性分块注入 / Content is chunked by relevance",
+            ""
         ]
-        
-        for path, file_ctx in self.files.items():
-            file_contents.append(f"\n### `{path}`")
-            file_contents.append(f"**摘要**: {file_ctx.abstract}")
-            
-            if file_ctx.content:
-                content = file_ctx.content
-                if len(content) > 2000:
-                    content = content[:1000] + f"\n[... 省略 {len(content) - 2000} 字符 ...]\n" + content[-1000:]
-                file_contents.append(f"```\n{content}\n```")
-            
-            file_contents.append("-" * 40)
-        
+
+        if max_tokens is not None and max_tokens <= 0:
+            return None
+
+        tokens_used = estimate_tokens("\n".join(file_contents))
+        budget = max_tokens if max_tokens is not None else None
+
+        for file_ctx in self.files.values():
+            remaining = None if budget is None else max(0, budget - tokens_used)
+            block = self._build_file_block(file_ctx, query_text, remaining)
+            if not block:
+                continue
+            block_tokens = estimate_tokens(block)
+            if budget is not None and tokens_used + block_tokens > budget:
+                continue
+            file_contents.append(block)
+            tokens_used += block_tokens
+
+        if len(file_contents) <= 4:
+            return None
+
         return {"role": "system", "content": "\n".join(file_contents)}
     
     def get_recent_messages(self, n: int) -> List[Message]:

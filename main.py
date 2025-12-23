@@ -491,6 +491,7 @@ class InteractiveSession:
         self._manual_buffer = []
         self._manual_cursor = 0
         self._manual_render_lines = 1
+        self._manual_cursor_display = None
         self._input_history = []
         self._input_history_idx = None
         self._stream_enabled = self._should_use_streaming()
@@ -506,7 +507,12 @@ class InteractiveSession:
         self._tracker_thread = None
         self._tracker_lock = threading.Lock()
         self._thinking_indicator = None
+        self._thinking_block_active = False
+        self._thinking_block_lines = 0
+        self._thinking_header_text = ""
         self._live_tool_animator = None
+        self._active_tool_calls = 0
+        self._active_tool_names: List[str] = []
         self._live_file_paths: Set[str] = set()
         self._commands = {
             "help": self._cmd_help,
@@ -672,6 +678,7 @@ class InteractiveSession:
             hooks = {
                 "llm_start": self._on_llm_start,
                 "llm_end": self._on_llm_end,
+                "thinking": self._on_thinking,
                 "tool_start": self._on_tool_start,
                 "tool_end": self._on_tool_end,
             }
@@ -682,6 +689,8 @@ class InteractiveSession:
             self.agent.set_ui_hooks(None)
         self._stop_thinking_indicator()
         self._stop_tool_glow()
+        self._active_tool_calls = 0
+        self._active_tool_names = []
 
     def _on_llm_start(self, **_kwargs) -> None:
         self._start_thinking_indicator()
@@ -689,8 +698,28 @@ class InteractiveSession:
     def _on_llm_end(self, **_kwargs) -> None:
         self._stop_thinking_indicator()
 
+    def _on_thinking(self, thinking: Optional[str] = None, **_kwargs) -> None:
+        text = (thinking or "").strip()
+        if not text:
+            return
+        self._stop_thinking_indicator()
+        header = self._format_status_prefix("thinking", "blue")
+        print(header)
+        if self._stream_enabled:
+            self._stream_print(text)
+        else:
+            print(text)
+        header_lines = self._count_rendered_lines(header)
+        content_lines = self._count_rendered_lines(text)
+        self._thinking_header_text = header
+        self._thinking_block_lines = header_lines + content_lines
+        self._thinking_block_active = True
+
     def _on_tool_start(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None, call_id: Optional[str] = None) -> None:
-        self._start_tool_glow(tool_name)
+        self._collapse_thinking_block()
+        self._active_tool_calls += 1
+        self._active_tool_names.append(tool_name)
+        self._start_tool_glow(tool_name, active_count=self._active_tool_calls)
 
     def _on_tool_end(
         self,
@@ -699,7 +728,15 @@ class InteractiveSession:
         arguments: Optional[Dict[str, Any]] = None,
         call_id: Optional[str] = None
     ) -> None:
-        self._stop_tool_glow()
+        if self._active_tool_calls > 0:
+            self._active_tool_calls -= 1
+        if tool_name in self._active_tool_names:
+            self._active_tool_names.remove(tool_name)
+        if self._active_tool_calls <= 0:
+            self._stop_tool_glow()
+        else:
+            display_name = self._active_tool_names[-1] if self._active_tool_names else tool_name
+            self._start_tool_glow(display_name, active_count=self._active_tool_calls)
         self._render_live_file(tool_name, arguments, result)
 
     def _start_thinking_indicator(self) -> None:
@@ -733,10 +770,10 @@ class InteractiveSession:
         self._thinking_indicator.stop()
         self._thinking_indicator = None
 
-    def _start_tool_glow(self, tool_name: str) -> None:
+    def _start_tool_glow(self, tool_name: str, active_count: int = 1) -> None:
         self._stop_thinking_indicator()
         self._stop_tool_glow()
-        raw_text, final_text = self._format_live_tool_text(tool_name)
+        raw_text, final_text = self._format_live_tool_text(tool_name, active_count=active_count)
         if not (self._use_color and self._supports_ansi and self._animation_enabled):
             print(final_text)
             return
@@ -754,6 +791,37 @@ class InteractiveSession:
             return
         self._live_tool_animator.stop()
         self._live_tool_animator = None
+
+    def _collapse_thinking_block(self) -> None:
+        if not self._thinking_block_active:
+            return
+        header = self._thinking_header_text or self._format_status_prefix("thinking", "blue")
+        end_line = self._format_status_prefix("thinking-end", "gray")
+        if self._supports_ansi:
+            self._clear_recent_lines(self._thinking_block_lines)
+            print(header)
+            print(end_line)
+        else:
+            print(end_line)
+        self._thinking_block_active = False
+        self._thinking_block_lines = 0
+        self._thinking_header_text = ""
+
+    def _clear_recent_lines(self, count: int) -> None:
+        if count <= 0 or not self._supports_ansi:
+            return
+        for _ in range(count):
+            sys.stdout.write("\x1b[1A")
+            sys.stdout.write("\x1b[2K")
+        sys.stdout.flush()
+
+    def _count_rendered_lines(self, text: str) -> int:
+        if text is None:
+            return 0
+        stripped = self._strip_ansi(text)
+        width = self._get_terminal_columns()
+        lines = self._wrap_text_lines(stripped, width)
+        return len(lines)
 
     def _render_live_file(
         self,
@@ -785,12 +853,15 @@ class InteractiveSession:
         color = "magenta"
         self._print_status_line("file", self._format_clickable_path(str(path)), color)
 
-    def _format_live_tool_text(self, tool_name: str) -> Tuple[str, str]:
+    def _format_live_tool_text(self, tool_name: str, active_count: int = 1) -> Tuple[str, str]:
         dot = "*" if self._ascii_frame else "\u25cf"
-        label = "tool"
-        raw_text = f"{dot} {label} {tool_name}".strip()
+        label = "tool" if active_count <= 1 else "tools"
+        suffix = tool_name
+        if active_count > 1:
+            suffix = f"{tool_name} +{active_count - 1}".strip() if tool_name else f"x{active_count}"
+        raw_text = f"{dot} {label} {suffix}".strip()
         prefix = self._format_status_prefix(label, "cyan")
-        final_text = f"{prefix} {tool_name}".strip()
+        final_text = f"{prefix} {suffix}".strip()
         return raw_text, final_text
 
     def _format_live_thinking_text(self) -> Tuple[str, str]:
@@ -918,6 +989,7 @@ class InteractiveSession:
         self._manual_buffer = []
         self._manual_cursor = 0
         self._manual_render_lines = 1
+        self._manual_cursor_display = self._display_width(self.prompt)
         self._print_tracker_anchor()
         self._start_tracker()
         try:
@@ -1010,6 +1082,7 @@ class InteractiveSession:
         end_row = max(0, (full_width - 1) // width) if full_width > 0 and width > 0 else 0
 
         with self._tracker_lock:
+            self._manual_cursor_display = cursor_width
             sys.stdout.write("\r")
             if prev_lines > 1:
                 sys.stdout.write(f"\x1b[{prev_lines - 1}A")
@@ -1447,6 +1520,15 @@ class InteractiveSession:
         print(title)
         print(self._rule())
 
+    def _render_info_frame(self, label: str, title: str, lines: List[str], color: str = "cyan") -> None:
+        prefix = self._format_status_prefix(label, color)
+        header = f"{prefix} {title}".strip()
+        divider_width = max(12, min(48, self._get_line_width() - 6))
+        divider = "-" * divider_width
+        block_lines = [header, divider]
+        block_lines.extend(lines)
+        self._render_output_frame("\n".join(block_lines))
+
     def _build_logo_block(self, dim: bool = False, palette: Optional[List[str]] = None) -> List[str]:
         """
         构建立体Logo文本块
@@ -1601,22 +1683,27 @@ class InteractiveSession:
         return width
 
     def _cmd_help(self, args: List[str]) -> None:
-        self._print_title("可用命令")
-        print("/help                 显示帮助")
-        print("/exit                 退出程序")
-        print("/reset                重置对话")
-        print("/status               查看Agent状态")
-        print("/files                查看文件上下文")
-        print("/context [on|off]      切换显式上下文模式")
-        print("/steps [on|off]        切换步骤概览展示")
-        print("/multiline [on|off]    切换多行输入模式")
-        print("/history [n]           查看最近n条对话")
-        print("/clear                清屏")
-        print("/log [n]              查看最近n行日志")
-        print("/anim [style|auto|off] 设置动画样式")
-        print("/stream [on|off]       切换流式输出")
-        print("\n说明：保留 exit/reset/status/files 等原有命令，不带前缀也可使用。")
-        print("      支持 Tab 补全命令，历史记录保存在 workspace/.sama_history。")
+        entries = [
+            ("/help", "显示帮助"),
+            ("/exit", "退出程序"),
+            ("/reset", "重置对话"),
+            ("/status", "查看Agent状态"),
+            ("/files", "查看文件上下文"),
+            ("/context [on|off]", "切换显式上下文模式"),
+            ("/steps [on|off]", "切换步骤概览展示"),
+            ("/multiline [on|off]", "切换多行输入模式"),
+            ("/history [n]", "查看最近n条对话"),
+            ("/clear", "清屏"),
+            ("/log [n]", "查看最近n行日志"),
+            ("/anim [style|auto|off]", "设置动画样式"),
+            ("/stream [on|off]", "切换流式输出"),
+        ]
+        col_width = max(len(cmd) for cmd, _ in entries)
+        lines = [f"{cmd.ljust(col_width)}  {desc}" for cmd, desc in entries]
+        lines.append("")
+        lines.append("说明：保留 exit/reset/status/files 等原有命令，不带前缀也可使用。")
+        lines.append("      支持 Tab 补全命令，历史记录保存在 workspace/.sama_history。")
+        self._render_info_frame("help", "可用命令", lines, color="cyan")
 
     def _cmd_exit(self, args: List[str]) -> None:
         print("\n再见。")
@@ -1628,13 +1715,12 @@ class InteractiveSession:
 
     def _cmd_status(self, args: List[str]) -> None:
         status = self.agent.get_status()
-        self._print_title("Agent 状态")
         if not status:
-            print("无状态信息。")
+            self._render_info_frame("status", "Agent 状态", ["无状态信息。"], color="blue")
             return
         width = max(len(str(key)) for key in status.keys())
-        for key, value in status.items():
-            print(f"{str(key).ljust(width)} : {value}")
+        lines = [f"{str(key).ljust(width)} : {value}" for key, value in status.items()]
+        self._render_info_frame("status", "Agent 状态", lines, color="blue")
 
     def _cmd_files(self, args: List[str]) -> None:
         self._print_title("文件上下文")
@@ -2012,11 +2098,14 @@ class InteractiveSession:
         return self._display_width(buffer[:idx])
 
     def _get_tracker_target(self, width: int) -> Tuple[int, int]:
+        manual_absolute = None
+        if self._manual_input_active and self._manual_cursor_display is not None:
+            manual_absolute = self._manual_cursor_display
         prompt_len = getattr(self, "_prompt_visible_len", self._visible_len(self.prompt))
         cursor_idx = self._get_cursor_index()
         if width <= 0:
             width = 1
-        absolute = prompt_len + cursor_idx
+        absolute = manual_absolute if manual_absolute is not None else prompt_len + cursor_idx
         column = min(absolute % width, width - 1)
         lines_up = 1 + (absolute // width)
         return column, lines_up

@@ -55,6 +55,75 @@ def format_tool_result(result: Any, max_length: int = 2000) -> str:
     return truncate_text(str(result), max_length)
 
 
+def _sanitize_value(value: Any, max_length: int, max_items: int, depth: int, max_depth: int) -> Any:
+    if depth >= max_depth:
+        return truncate_text(str(value), max_length)
+    if isinstance(value, str):
+        return truncate_text(value, max_length)
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        sanitized = {}
+        for idx, (key, val) in enumerate(value.items()):
+            if idx >= max_items:
+                sanitized["..."] = f"({len(value) - max_items} more)"
+                break
+            sanitized[str(key)] = _sanitize_value(val, max_length, max_items, depth + 1, max_depth)
+        return sanitized
+    if isinstance(value, (list, tuple)):
+        sanitized_list = []
+        for idx, item in enumerate(value):
+            if idx >= max_items:
+                sanitized_list.append(f"... ({len(value) - max_items} more)")
+                break
+            sanitized_list.append(_sanitize_value(item, max_length, max_items, depth + 1, max_depth))
+        return sanitized_list
+    return truncate_text(str(value), max_length)
+
+
+def sanitize_tool_arguments(
+    arguments: Optional[Dict[str, Any]],
+    max_value_length: int = 240,
+    max_items: int = 16,
+    max_depth: int = 3
+) -> Dict[str, Any]:
+    """
+    清理工具参数，避免过长内容进入上下文 / Sanitize tool arguments for context
+    """
+    if not arguments:
+        return {}
+    return _sanitize_value(arguments, max_value_length, max_items, 0, max_depth)
+
+
+def format_tool_trace(
+    tool_name: str,
+    arguments: Optional[Dict[str, Any]],
+    result: Any,
+    call_id: Optional[str] = None,
+    output_override: Optional[Any] = None,
+    max_output_length: int = 2000
+) -> str:
+    """
+    生成结构化工具轨迹 / Build structured tool trace payload
+    """
+    status = getattr(result, "status", None)
+    status_value = getattr(status, "value", None) or (str(status) if status else "unknown")
+    error_message = getattr(result, "error_message", None)
+    execution_time = getattr(result, "execution_time", None)
+    output_value = None if error_message else (output_override if output_override is not None else getattr(result, "output", None))
+
+    payload = {
+        "tool": tool_name,
+        "status": status_value,
+        "call_id": call_id,
+        "arguments": sanitize_tool_arguments(arguments),
+        "output": None if output_value is None else format_tool_result(output_value, max_output_length),
+        "error": error_message,
+        "execution_time": execution_time,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
 def refine_search_result(raw_result: str) -> str:
     """
     精炼搜索结果，将原始结果转换为上下文友好的格式 / Refine search result to context-friendly format

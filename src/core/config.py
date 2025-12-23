@@ -104,6 +104,11 @@ class AgentConfig(BaseModel):
         default="./workspace",
         description="Agent工作区目录 / Agent workspace directory"
     )
+    max_parallel_tools: int = Field(
+        default=4,
+        gt=0,
+        description="并行工具执行上限 / Max parallel tool executions"
+    )
 
 
 class ShellToolConfig(BaseModel):
@@ -191,6 +196,44 @@ class MemoryConfig(BaseModel):
         default=None,
         gt=0,
         description="上下文最大token数（估算）/ Maximum context tokens (estimated)"
+    )
+    system_token_ratio: float = Field(
+        default=0.2,
+        ge=0.0,
+        le=1.0,
+        description="系统上下文预算占比 / System context budget ratio"
+    )
+    file_context_token_ratio: float = Field(
+        default=0.35,
+        ge=0.0,
+        le=1.0,
+        description="文件上下文预算占比 / File context budget ratio"
+    )
+    history_token_ratio: float = Field(
+        default=0.65,
+        ge=0.0,
+        le=1.0,
+        description="对话历史预算占比 / History context budget ratio"
+    )
+    file_context_chunk_size: int = Field(
+        default=800,
+        gt=0,
+        description="文件分块大小（字符数）/ File chunk size (chars)"
+    )
+    file_context_max_chunks_per_file: int = Field(
+        default=2,
+        gt=0,
+        description="每个文件最大分块数 / Max chunks per file"
+    )
+    file_context_min_score: int = Field(
+        default=1,
+        ge=0,
+        description="分块最小相关性分数 / Minimum chunk relevance score"
+    )
+    file_context_query_messages: int = Field(
+        default=3,
+        gt=0,
+        description="用于检索的最近用户消息数 / Recent user messages for retrieval"
     )
     type: str = Field(default="buffer", description="记忆类型 / Memory type")
     summary_keep_last_n: int = Field(

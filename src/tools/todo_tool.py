@@ -296,6 +296,12 @@ List tasks: {"operation": "list"}
     def __init__(self):
         """初始化 / Initialize"""
         super().__init__()
+
+    def can_run_in_parallel(self, arguments: Dict[str, Any]) -> bool:
+        """
+        Todo为共享状态，避免并行 / Avoid parallelism for shared state
+        """
+        return False
     
     def _run(
         self,

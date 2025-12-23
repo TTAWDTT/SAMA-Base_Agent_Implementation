@@ -266,6 +266,12 @@ Executes Python code and returns results. Supports direct execution, save and ex
         if arguments.get("persistent"):
             return False
         return self.subprocess_safe
+
+    def can_run_in_parallel(self, arguments: dict) -> bool:
+        """
+        持久化模式避免并行 / Avoid parallelism in persistent mode
+        """
+        return not arguments.get("persistent")
     
     def _run(
         self,

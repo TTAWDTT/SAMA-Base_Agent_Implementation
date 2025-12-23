@@ -22,9 +22,10 @@ import importlib
 import multiprocessing
 import queue as queue_module
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 from openai import OpenAI
+from pydantic import ValidationError
 
 from src.core.config import get_config, Config
 from src.core.logger import get_logger, init_logging
@@ -39,7 +40,7 @@ from src.core.schema import (
     ToolResultStatus,
 )
 from src.tools import DEFAULT_TOOLS, BaseTool
-from src.utils.helpers import format_tool_result, generate_request_id, is_search_result, refine_search_result
+from src.utils.helpers import format_tool_result, format_tool_trace, generate_request_id, is_search_result, refine_search_result
 
 logger = get_logger("agents.base")
 
@@ -188,6 +189,10 @@ You can create, modify and manage files in the workspace. For important intermed
 
 当前文件上下文 / Current file context:
 {self.memory.get_files_summary()}
+
+**上下文策略 / Context Strategy**:
+- 文件内容按相关性分块注入，预算不足时优先压缩文件上下文
+- 需要完整文件时，请明确要求读取或更新文件上下文
 
 ## 工作记忆 / Working Memory
 
@@ -473,6 +478,26 @@ You can create, modify and manage files in the workspace. For important intermed
             error_message=error_message,
             execution_time=time.time() - start_time
         )
+
+    def _validate_tool_arguments(
+        self,
+        tool: BaseTool,
+        arguments: Dict[str, Any]
+    ) -> Tuple[Dict[str, Any], Optional[str]]:
+        """
+        校验工具参数 / Validate tool arguments
+        """
+        if not tool.input_schema:
+            return arguments, None
+        if not isinstance(arguments, dict):
+            return {}, "工具参数必须为对象 / Tool arguments must be an object"
+        try:
+            model = tool.input_schema(**arguments)
+        except ValidationError as exc:
+            return arguments, f"工具参数校验失败 / Tool input validation failed: {exc}"
+        if hasattr(model, "model_dump"):
+            return model.model_dump(), None
+        return model.dict(), None
     
     def _process_tool_calls(self, tool_calls: List[Any]) -> List[ToolResult]:
         """
@@ -484,35 +509,95 @@ You can create, modify and manage files in the workspace. For important intermed
         Returns:
             List[ToolResult]: 工具执行结果列表 / List of tool execution results
         """
-        results = []
-        # 维护tool_call_id的映射
-        # Maintain mapping of tool_call_ids
+        results: List[Optional[ToolResult]] = [None] * len(tool_calls)
         self._tool_call_ids = {}
-        
+        self._tool_call_args = {}
+        parallel_entries = []
+        serial_entries = []
+
+        def _record_result(
+            index: int,
+            call_record: ToolCall,
+            result: ToolResult,
+            arguments: Dict[str, Any],
+            call_id: str
+        ) -> None:
+            results[index] = result
+            if self.steps:
+                self.steps[-1].tool_calls.append(call_record)
+                self.steps[-1].tool_results.append(result)
+            self._emit_ui_event(
+                "tool_end",
+                tool_name=call_record.tool_name,
+                arguments=arguments,
+                result=result,
+                call_id=call_id
+            )
+
         for i, tool_call in enumerate(tool_calls):
             tool_name = tool_call.function.name
-            
+            parse_error = None
+
             # 解析参数 / Parse arguments
             try:
                 arguments = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
                 arguments = {}
-            
-            # 获取tool_call_id（使用LLM返回的）
-            # Get tool_call_id from LLM response
+                parse_error = f"Invalid JSON: {exc}"
+
+            if not isinstance(arguments, dict):
+                arguments = {}
+                parse_error = parse_error or "工具参数必须为对象 / Tool arguments must be an object"
+
+            # 获取tool_call_id（使用LLM返回的） / Get tool_call_id from LLM response
             call_id = getattr(tool_call, "id", None) or f"call_{tool_name}_{i}"
             self._tool_call_ids[i] = call_id
-            
-            # 记录工具调用 / Record tool call
+            self._tool_call_args[i] = arguments
+
             call_record = ToolCall(
                 tool_name=tool_name,
                 arguments=arguments,
                 call_id=call_id
             )
 
-            # 通知UI工具开始 / Notify UI tool start
-            self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
-            
+            tool = self.tools.get(tool_name)
+            if tool is None:
+                self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
+                result = ToolResult(
+                    tool_name=tool_name,
+                    status=ToolResultStatus.ERROR,
+                    output=None,
+                    error_message=f"未知工具 / Unknown tool: {tool_name}"
+                )
+                _record_result(i, call_record, result, arguments, call_id)
+                continue
+
+            if parse_error:
+                self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
+                result = ToolResult(
+                    tool_name=tool_name,
+                    status=ToolResultStatus.ERROR,
+                    output=None,
+                    error_message=f"工具参数解析失败 / Tool arguments parse failed: {parse_error}"
+                )
+                _record_result(i, call_record, result, arguments, call_id)
+                continue
+
+            arguments, validation_error = self._validate_tool_arguments(tool, arguments)
+            if validation_error:
+                self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
+                result = ToolResult(
+                    tool_name=tool_name,
+                    status=ToolResultStatus.ERROR,
+                    output=None,
+                    error_message=validation_error
+                )
+                _record_result(i, call_record, result, arguments, call_id)
+                continue
+
+            call_record.arguments = arguments
+            self._tool_call_args[i] = arguments
+
             # 如果是文件相关工具，进行额外检查：仅在读取时确保目标文件在memory.files或路径存在
             if tool_name in ("file", "read_file", "write_file"):
                 operation = str(arguments.get("operation", "")).lower()
@@ -524,49 +609,116 @@ You can create, modify and manage files in the workspace. For important intermed
                 if operation == "read":
                     file_path = arguments.get("file_path") or arguments.get("path") or arguments.get("file")
                     if file_path:
-                        # 优先检查内存上下文中的文件
                         known_paths = [f.path for f in self.memory.list_files()]
                         if file_path not in known_paths and not os.path.exists(file_path):
                             logger.warning(f"文件工具调用使用了未知路径或不存在的文件，跳过: {file_path}")
+                            self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
                             result = ToolResult(
                                 tool_name=tool_name,
                                 status=ToolResultStatus.ERROR,
                                 output=None,
                                 error_message=f"Unknown or missing file: {file_path}"
                             )
-                            results.append(result)
-                            # 更新当前步骤
-                            if self.steps:
-                                self.steps[-1].tool_calls.append(call_record)
-                                self.steps[-1].tool_results.append(result)
-                            # 通知UI工具结束 / Notify UI tool end
-                            self._emit_ui_event(
-                                "tool_end",
-                                tool_name=tool_name,
-                                arguments=arguments,
-                                result=result,
-                                call_id=call_id
-                            )
+                            _record_result(i, call_record, result, arguments, call_id)
                             continue
 
-            # 执行工具 / Execute tool
-            result = self._execute_tool(tool_name, arguments)
-            results.append(result)
-            
-            # 更新当前步骤 / Update current step
-            if self.steps:
-                self.steps[-1].tool_calls.append(call_record)
-                self.steps[-1].tool_results.append(result)
-            # 通知UI工具结束 / Notify UI tool end
+            entry = {
+                "index": i,
+                "tool_name": tool_name,
+                "arguments": arguments,
+                "call_id": call_id,
+                "call_record": call_record,
+                "tool": tool,
+            }
+
+            if tool.can_run_in_parallel(arguments):
+                parallel_entries.append(entry)
+            else:
+                serial_entries.append(entry)
+
+        for entry in serial_entries:
             self._emit_ui_event(
-                "tool_end",
-                tool_name=tool_name,
-                arguments=arguments,
-                result=result,
-                call_id=call_id
+                "tool_start",
+                tool_name=entry["tool_name"],
+                arguments=entry["arguments"],
+                call_id=entry["call_id"]
             )
-        
-        return results
+            result = self._execute_tool(entry["tool_name"], entry["arguments"])
+            _record_result(
+                entry["index"],
+                entry["call_record"],
+                result,
+                entry["arguments"],
+                entry["call_id"]
+            )
+
+        if parallel_entries:
+            max_workers = max(1, getattr(self.config.agent, "max_parallel_tools", 4))
+            if len(parallel_entries) == 1 or max_workers == 1:
+                for entry in parallel_entries:
+                    self._emit_ui_event(
+                        "tool_start",
+                        tool_name=entry["tool_name"],
+                        arguments=entry["arguments"],
+                        call_id=entry["call_id"]
+                    )
+                    result = self._execute_tool(entry["tool_name"], entry["arguments"])
+                    _record_result(
+                        entry["index"],
+                        entry["call_record"],
+                        result,
+                        entry["arguments"],
+                        entry["call_id"]
+                    )
+            else:
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=min(len(parallel_entries), max_workers)
+                ) as executor:
+                    future_map = {}
+                    for entry in parallel_entries:
+                        self._emit_ui_event(
+                            "tool_start",
+                            tool_name=entry["tool_name"],
+                            arguments=entry["arguments"],
+                            call_id=entry["call_id"]
+                        )
+                        future = executor.submit(
+                            self._execute_tool,
+                            entry["tool_name"],
+                            entry["arguments"]
+                        )
+                        future_map[future] = entry
+                    for future in concurrent.futures.as_completed(future_map):
+                        entry = future_map[future]
+                        try:
+                            result = future.result()
+                        except Exception as exc:
+                            result = ToolResult(
+                                tool_name=entry["tool_name"],
+                                status=ToolResultStatus.ERROR,
+                                output=None,
+                                error_message=f"工具执行异常 / Tool execution error: {exc}"
+                            )
+                        _record_result(
+                            entry["index"],
+                            entry["call_record"],
+                            result,
+                            entry["arguments"],
+                            entry["call_id"]
+                        )
+
+        final_results = []
+        for idx, result in enumerate(results):
+            if result is None:
+                result = ToolResult(
+                    tool_name=tool_calls[idx].function.name,
+                    status=ToolResultStatus.ERROR,
+                    output=None,
+                    error_message="工具结果缺失 / Tool result missing"
+                )
+            final_results.append(result)
+
+        return final_results
     
     def run(self, user_input: str) -> AgentResponse:
         """
@@ -654,6 +806,11 @@ You can create, modify and manage files in the workspace. For important intermed
                 # 如果有 thinking，记录到日志 / Log thinking if present
                 if thinking_text:
                     logger.info(f"💭 Thinking: {thinking_text[:200]}..." if len(thinking_text) > 200 else f"💭 Thinking: {thinking_text}")
+                    self._emit_ui_event(
+                        "thinking",
+                        thinking=thinking_text,
+                        step=self.current_step
+                    )
                 
                 # 检查是否有工具调用 / Check for tool calls
                 if message.tool_calls:
@@ -685,10 +842,12 @@ You can create, modify and manage files in the workspace. For important intermed
                     # 将工具结果添加到记忆 / Add tool results to memory
                     for i, tool_call in enumerate(message.tool_calls):
                         result = tool_results[i]
+                        arguments = {}
+                        if hasattr(self, "_tool_call_args") and i in self._tool_call_args:
+                            arguments = self._tool_call_args[i]
+
                         result_text = format_tool_result(result.output)
-                        if result.error_message:
-                            result_text = f"错误 / Error: {result.error_message}"
-                        
+
                         # 对搜索结果进行精炼后再存入上下文
                         # Refine search results before storing in context
                         # 原始结果格式：title/url/body/button
@@ -723,8 +882,16 @@ You can create, modify and manage files in the workspace. For important intermed
                         if call_id:
                             metadata["tool_call_id"] = call_id
 
+                        trace_text = format_tool_trace(
+                            tool_call.function.name,
+                            arguments,
+                            result,
+                            call_id=call_id,
+                            output_override=result_text
+                        )
+
                         self.memory.add_tool_message(
-                            content=result_text,
+                            content=trace_text,
                             tool_name=tool_call.function.name,
                             metadata=metadata
                         )
