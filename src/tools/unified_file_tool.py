@@ -385,6 +385,15 @@ Unified tool for file read, write, and directory listing. Supports auto-creating
         
         if content is None:
             return "写入内容不能为空 / Content cannot be empty for write operation"
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in (".pdf", ".doc", ".docx"):
+            return (
+                "不支持直接写入 .pdf/.doc/.docx（文本写入会导致乱码或文件损坏）。"
+                "请使用Python工具生成：PDF用reportlab并注册中文字体，"
+                "Word用python-docx。 / Direct writes to .pdf/.doc/.docx are blocked; "
+                "use Python to generate PDF (reportlab + CJK font) or Word (python-docx)."
+            )
         
         try:
             abs_path = os.path.abspath(file_path)

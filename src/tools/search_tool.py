@@ -213,8 +213,27 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             }, ensure_ascii=False)
         
         self._last_tavily_error = None
+        engine = (self.engine or "auto").strip().lower()
 
-        # 尝试使用Tavily搜索 / Try Tavily search
+        if engine in ("duckduckgo", "ddg"):
+            return self._search_with_duckduckgo(query, max_results, None)
+
+        if engine in ("tavily", "tavily_only"):
+            if not self.api_key:
+                return json.dumps({
+                    "error": "Tavily API密钥未配置 / Tavily API key not configured",
+                    "hint": "请在config.yaml中配置search_tool.api_key或切换engine=duckduckgo / Configure search_tool.api_key or set engine=duckduckgo"
+                }, ensure_ascii=False)
+            tavily_result = self._search_with_tavily(query, max_results)
+            if tavily_result:
+                return tavily_result
+            return json.dumps({
+                "error": "Tavily搜索失败 / Tavily search failed",
+                "detail": self._last_tavily_error or "unknown error",
+                "hint": "检查API密钥或切换engine=duckduckgo / Check API key or set engine=duckduckgo"
+            }, ensure_ascii=False)
+
+        # 自动模式：优先Tavily，失败回退DuckDuckGo / Auto: Tavily first, fallback to DuckDuckGo
         if self.api_key:
             tavily_result = self._search_with_tavily(query, max_results)
             if tavily_result:
@@ -224,7 +243,6 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             self.logger.info("Tavily API密钥未配置，使用DuckDuckGo / Tavily API key not configured, using DuckDuckGo")
             self._last_tavily_error = "Tavily API key missing or empty"
         
-        # 回退到DuckDuckGo搜索 / Fallback to DuckDuckGo search
         return self._search_with_duckduckgo(query, max_results, self._last_tavily_error)
     
     def _format_results(self, query: str, results: List[Dict], engine: str, notice: Optional[str] = None) -> str:
@@ -303,6 +321,27 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             self._last_tavily_error = f"Tavily search error: {str(e)}"
             return None
     
+    def _fetch_duckduckgo_results(self, query: str, max_results: int) -> List[Dict[str, Any]]:
+        try:
+            from duckduckgo_search import DDGS
+            client = DDGS()
+            if hasattr(client, "__enter__"):
+                with client as ddgs_client:
+                    return list(ddgs_client.text(query, max_results=max_results))
+            return list(client.text(query, max_results=max_results))
+        except ImportError:
+            from duckduckgo_search import ddgs as ddgs_factory
+            try:
+                client = ddgs_factory()
+            except TypeError:
+                client = ddgs_factory
+            if hasattr(client, "__enter__"):
+                with client as ddgs_client:
+                    return list(ddgs_client.text(query, max_results=max_results))
+            if hasattr(client, "text"):
+                return list(client.text(query, max_results=max_results))
+            return list(client(query, max_results=max_results))
+
     def _search_with_duckduckgo(self, query: str, max_results: int, tavily_error: Optional[str] = None) -> str:
         """
         使用DuckDuckGo执行搜索 / Execute search with DuckDuckGo
@@ -315,15 +354,7 @@ Performs web search and returns structured results. Primary engine is Tavily, fa
             str: JSON格式搜索结果 / Search results in JSON format
         """
         try:
-            raw_results = None
-            try:
-                from duckduckgo_search import ddgs
-                with ddgs() as ddgs:
-                    raw_results = list(ddgs.text(query, max_results=max_results))
-            except ImportError:
-                from duckduckgo_search import ddgs
-                raw_results = list(ddgs.text(query, max_results=max_results))
-            
+            raw_results = self._fetch_duckduckgo_results(query, max_results)
             if not raw_results:
                 return json.dumps({
                     "query": query,

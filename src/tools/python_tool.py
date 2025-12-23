@@ -28,6 +28,7 @@ from pydantic import Field
 
 from src.core.config import get_config
 from src.tools.base import BaseTool, ToolInput
+from src.utils.encoding import decode_output_bytes
 
 
 class PythonInput(ToolInput):
@@ -353,19 +354,19 @@ Executes Python code and returns results. Supports direct execution, save and ex
             result = subprocess.run(
                 [sys.executable, temp_file],
                 capture_output=True,
-                text=True,
                 timeout=timeout,
-                encoding="utf-8",
-                errors="replace"
+                text=False
             )
             
             output_parts = []
             
-            if result.stdout:
-                output_parts.append(f"输出 / Output:\n{result.stdout}")
+            stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
+            if stdout_text:
+                output_parts.append(f"输出 / Output:\n{stdout_text}")
             
-            if result.stderr:
-                output_parts.append(f"错误 / Error:\n{result.stderr}")
+            stderr_text = decode_output_bytes(result.stderr) if result.stderr else ""
+            if stderr_text:
+                output_parts.append(f"错误 / Error:\n{stderr_text}")
             
             if result.returncode != 0:
                 output_parts.append(f"返回码 / Return code: {result.returncode}")
@@ -404,19 +405,19 @@ Executes Python code and returns results. Supports direct execution, save and ex
             result = subprocess.run(
                 [sys.executable, file_path],
                 capture_output=True,
-                text=True,
                 timeout=timeout,
-                encoding="utf-8",
-                errors="replace"
+                text=False
             )
             
             output_parts = []
             
-            if result.stdout:
-                output_parts.append(f"输出 / Output:\n{result.stdout}")
+            stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
+            if stdout_text:
+                output_parts.append(f"输出 / Output:\n{stdout_text}")
             
-            if result.stderr:
-                output_parts.append(f"错误 / Error:\n{result.stderr}")
+            stderr_text = decode_output_bytes(result.stderr) if result.stderr else ""
+            if stderr_text:
+                output_parts.append(f"错误 / Error:\n{stderr_text}")
             
             if result.returncode != 0:
                 output_parts.append(f"返回码 / Return code: {result.returncode}")

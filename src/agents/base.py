@@ -127,6 +127,7 @@ class BaseAgent:
         self.current_step = 0
         self.steps: List[AgentStep] = []
         self._max_tokens_warned = False
+        self._ui_hooks: Dict[str, Any] = {}
         
         # 显式上下文模式 / Explicit context mode
         self.verbose_context = False  # 是否显示详细上下文 / Whether to show detailed context
@@ -145,6 +146,27 @@ class BaseAgent:
         workspace_path.mkdir(parents=True, exist_ok=True)
         self.workspace = str(workspace_path.resolve())
         logger.info(f"工作区已初始化 / Workspace initialized: {self.workspace}")
+
+    def set_ui_hooks(self, hooks: Optional[Dict[str, Any]]) -> None:
+        """
+        设置UI回调 / Set UI hooks
+
+        Args:
+            hooks: 回调字典 / Hook dictionary
+        """
+        self._ui_hooks = hooks or {}
+
+    def _emit_ui_event(self, event: str, **payload: Any) -> None:
+        """
+        触发UI事件 / Emit UI event
+        """
+        handler = self._ui_hooks.get(event)
+        if not callable(handler):
+            return
+        try:
+            handler(**payload)
+        except Exception as exc:
+            logger.debug(f"UI回调失败 / UI hook failed: {event}: {exc}")
     
     def _build_workspace_section(self) -> str:
         """
@@ -467,7 +489,6 @@ You can create, modify and manage files in the workspace. For important intermed
         # Maintain mapping of tool_call_ids
         self._tool_call_ids = {}
         
-        recent_tool_calls = []
         for i, tool_call in enumerate(tool_calls):
             tool_name = tool_call.function.name
             
@@ -488,6 +509,9 @@ You can create, modify and manage files in the workspace. For important intermed
                 arguments=arguments,
                 call_id=call_id
             )
+
+            # 通知UI工具开始 / Notify UI tool start
+            self._emit_ui_event("tool_start", tool_name=tool_name, arguments=arguments, call_id=call_id)
             
             # 如果是文件相关工具，进行额外检查：仅在读取时确保目标文件在memory.files或路径存在
             if tool_name in ("file", "read_file", "write_file"):
@@ -504,11 +528,25 @@ You can create, modify and manage files in the workspace. For important intermed
                         known_paths = [f.path for f in self.memory.list_files()]
                         if file_path not in known_paths and not os.path.exists(file_path):
                             logger.warning(f"文件工具调用使用了未知路径或不存在的文件，跳过: {file_path}")
-                            results.append(ToolResult(tool_name=tool_name, status=ToolResultStatus.ERROR, output=None, error_message=f"Unknown or missing file: {file_path}"))
+                            result = ToolResult(
+                                tool_name=tool_name,
+                                status=ToolResultStatus.ERROR,
+                                output=None,
+                                error_message=f"Unknown or missing file: {file_path}"
+                            )
+                            results.append(result)
                             # 更新当前步骤
                             if self.steps:
                                 self.steps[-1].tool_calls.append(call_record)
-                                self.steps[-1].tool_results.append(results[-1])
+                                self.steps[-1].tool_results.append(result)
+                            # 通知UI工具结束 / Notify UI tool end
+                            self._emit_ui_event(
+                                "tool_end",
+                                tool_name=tool_name,
+                                arguments=arguments,
+                                result=result,
+                                call_id=call_id
+                            )
                             continue
 
             # 执行工具 / Execute tool
@@ -519,6 +557,14 @@ You can create, modify and manage files in the workspace. For important intermed
             if self.steps:
                 self.steps[-1].tool_calls.append(call_record)
                 self.steps[-1].tool_results.append(result)
+            # 通知UI工具结束 / Notify UI tool end
+            self._emit_ui_event(
+                "tool_end",
+                tool_name=tool_name,
+                arguments=arguments,
+                result=result,
+                call_id=call_id
+            )
         
         return results
     
@@ -568,6 +614,7 @@ You can create, modify and manage files in the workspace. For important intermed
                 
                 # 调用LLM / Call LLM
                 self.state = AgentState.THINKING
+                self._emit_ui_event("llm_start", iteration=self.current_step)
                 try:
                     response = self._call_llm(messages)
                 except TimeoutError as te:
@@ -579,6 +626,8 @@ You can create, modify and manage files in the workspace. For important intermed
                     logger.error(f"LLM 调用失败：{str(e)}")
                     self.memory.add_assistant_message(f"[系统] LLM 调用失败：{str(e)}")
                     return AgentResponse(success=False, final_answer=f"LLM 调用失败：{str(e)}", steps=self.steps, total_iterations=self.current_step, total_tokens_used=total_tokens_used, execution_time=time.time()-start_time, error_message=str(e))
+                finally:
+                    self._emit_ui_event("llm_end", iteration=self.current_step)
                 
                 # 解析响应 / Parse response
                 # 保护性检查响应是否为空或格式异常

@@ -10,7 +10,6 @@
 # ==============================================================================
 
 import argparse
-import json
 import sys
 import io
 import os
@@ -21,7 +20,7 @@ import threading
 import re
 import unicodedata
 from pathlib import Path
-from typing import Optional, List, Tuple, Any, Dict
+from typing import Optional, List, Tuple, Any, Dict, Set
 
 try:
     import readline as _readline
@@ -86,30 +85,34 @@ class AnimatedIndicator:
     加载动画控制器
     """
 
-    STYLES = ("gloss", "prism", "square", "block", "dots", "bar", "scan", "pulse", "wave", "spark", "orbit", "comet")
+    STYLES = ("spin", "dots", "gloss", "prism", "square", "block", "bar", "scan", "pulse", "wave", "spark", "orbit", "comet")
 
     def __init__(
         self,
-        message: str = "thinking",
+        message: str = "",
         interval: float = 0.12,
         enabled: bool = True,
-        style: str = "gloss",
+        style: str = "spin",
         use_color: bool = False,
         message_style: Optional[str] = None
     ):
         self.message = message
         self.interval = interval
         self.enabled = enabled
-        self.style = style
         self.use_color = use_color
         self.message_style = message_style
         self._stop = threading.Event()
         self._thread = None
         self._gloss_width = 14
         self._prism_width = 12
-        self._frames = self._get_frames(style)
-        self._frame_width = self._get_frame_width(style)
-        self._line_width = len(message) + 1 + self._frame_width
+        self.style = style
+        self._frames = self._get_frames(self.style)
+        self._frame_width = self._get_frame_width(self.style)
+        self._message_width = self._visible_len(self.message)
+        if self._message_width:
+            self._line_width = self._message_width + 1 + self._frame_width
+        else:
+            self._line_width = self._frame_width
 
     def start(self) -> None:
         if not self.enabled:
@@ -132,7 +135,10 @@ class AnimatedIndicator:
             frame = self._frames[idx % len(self._frames)]
             message = self._style(self.message, self.message_style) if self.message_style else self.message
             frame_text = self._render_frame(frame, idx)
-            text = f"{message} {frame_text}"
+            if message:
+                text = f"{message} {frame_text}"
+            else:
+                text = f"{frame_text}"
             pad = self._line_width - self._visible_len(text)
             if pad > 0:
                 text += " " * pad
@@ -144,6 +150,8 @@ class AnimatedIndicator:
         print("\r" + (" " * self._line_width) + "\r", end="", flush=True)
 
     def _get_frames(self, style: str) -> List[Any]:
+        if style == "spin":
+            return ["|", "/", "-", "\\"]
         if style == "gloss":
             return self._build_gloss_positions(width=self._gloss_width)
         if style == "prism":
@@ -193,6 +201,7 @@ class AnimatedIndicator:
             "cyan": "\x1b[36m",
             "blue": "\x1b[34m",
             "magenta": "\x1b[35m",
+            "white": "\x1b[37m",
             "green": "\x1b[32m",
             "yellow": "\x1b[33m",
             "gray": "\x1b[90m",
@@ -349,14 +358,97 @@ class AnimatedIndicator:
         return frames
 
 
+ANIMATION_STYLES = ("glow",) + AnimatedIndicator.STYLES
+
+
+class GlowTextAnimator:
+    """
+    工具执行时的光晕文字动画
+    """
+
+    def __init__(
+        self,
+        raw_text: str,
+        final_text: str,
+        style_fn,
+        visible_len_fn,
+        interval: float = 0.08,
+        line_width: Optional[int] = None,
+        clear_on_stop: bool = False
+    ):
+        self.raw_text = raw_text
+        self.final_text = final_text
+        self._style = style_fn
+        self._visible_len = visible_len_fn
+        self.interval = interval
+        self._stop = threading.Event()
+        self._thread = None
+        if line_width is None:
+            line_width = self._visible_len(raw_text)
+        self._line_width = max(1, line_width)
+        self._clear_on_stop = clear_on_stop
+
+    def start(self) -> None:
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        if not self._thread:
+            return
+        self._stop.set()
+        self._thread.join(timeout=0.2)
+        self._thread = None
+        if self._clear_on_stop:
+            self._clear_line()
+            return
+        pad = self._line_width - self._visible_len(self.final_text)
+        if pad > 0:
+            text = self.final_text + (" " * pad)
+        else:
+            text = self.final_text
+        print("\r" + text, flush=True)
+
+    def _clear_line(self) -> None:
+        print("\r" + (" " * self._line_width) + "\r", end="", flush=True)
+
+    def _run(self) -> None:
+        phase = 0
+        while not self._stop.is_set():
+            rendered = self._render_glow_text(phase)
+            pad = self._line_width - self._visible_len(rendered)
+            if pad > 0:
+                rendered += " " * pad
+            print("\r" + rendered, end="", flush=True)
+            time.sleep(self.interval)
+            phase += 1
+
+    def _render_glow_text(self, phase: int) -> str:
+        text = self.raw_text
+        length = len(text)
+        if length == 0:
+            return text
+        span = max(3, min(10, length // 2))
+        start = phase % length
+        palette = ["white", "blue", "magenta", "blue", "white"]
+        base_color = "white"
+        parts = []
+        for idx, ch in enumerate(text):
+            if start <= idx < start + span:
+                color = palette[(idx + phase) % len(palette)]
+            else:
+                color = base_color
+            parts.append(self._style(ch, color))
+        return "".join(parts)
+
+
 class InteractiveSession:
     """
     交互会话控制器
     """
 
-    def __init__(self, agent: BaseAgent, show_thinking: bool = True, show_steps: bool = True):
+    def __init__(self, agent: BaseAgent, show_steps: bool = True):
         self.agent = agent
-        self.show_thinking = show_thinking
         self.show_steps = show_steps
         self.multiline = False
         self.history = []
@@ -391,7 +483,7 @@ class InteractiveSession:
         self._output_pad = 1
         self._apply_prompt_style()
         self._animation_enabled = self._should_use_animation()
-        self._animation_style = "gloss"
+        self._animation_style = "glow"
         self._animation_index = 0
         self._intro_enabled = self._animation_enabled and self._supports_ansi and not os.getenv("SAMA_NO_INTRO")
         self._manual_input_enabled = self._should_use_manual_input()
@@ -413,6 +505,9 @@ class InteractiveSession:
         self._tracker_stop = threading.Event()
         self._tracker_thread = None
         self._tracker_lock = threading.Lock()
+        self._thinking_indicator = None
+        self._live_tool_animator = None
+        self._live_file_paths: Set[str] = set()
         self._commands = {
             "help": self._cmd_help,
             "exit": self._cmd_exit,
@@ -420,7 +515,6 @@ class InteractiveSession:
             "status": self._cmd_status,
             "files": self._cmd_files,
             "context": self._cmd_context,
-            "thinking": self._cmd_thinking,
             "steps": self._cmd_steps,
             "multiline": self._cmd_multiline,
             "history": self._cmd_history,
@@ -449,7 +543,6 @@ class InteractiveSession:
             "上下文": "context",
             "清屏": "clear",
             "多行": "multiline",
-            "思考": "thinking",
             "步骤": "steps",
             "历史": "history",
             "日志": "log",
@@ -511,26 +604,35 @@ class InteractiveSession:
                 self.logger.error(f"错误 / Error: {str(e)}")
                 print(f"\n发生错误: {str(e)}\n")
 
-    def render_response(self, response) -> None:
-        thinking_steps = [step for step in response.steps if step.thinking] if response.steps else []
-        printed_section = False
+    def render_response(self, response) -> str:
+        read_files, write_files = self._collect_file_activity(response.steps)
+        raw_text = response.final_answer or ""
+        explicit_paths = []
+        if raw_text.strip():
+            output_text, explicit_paths = self._split_output_path_lines(raw_text)
+        else:
+            output_text = "(空响应)"
 
-        if self.show_thinking and thinking_steps:
+        displayed_reads = []
+        displayed_writes = []
+        known_keys = set(self._live_file_paths)
+        for path in read_files:
+            key = self._normalize_path_key(path)
+            if key in known_keys:
+                continue
+            if self.show_steps:
+                displayed_reads.append(path)
+            known_keys.add(key)
+        for path in write_files:
+            key = self._normalize_path_key(path)
+            if key in known_keys:
+                continue
+            displayed_writes.append(path)
+            known_keys.add(key)
+
+        if displayed_reads or displayed_writes:
             print()
-            self._render_thinking_block(thinking_steps)
-            printed_section = True
-
-        tool_lines, read_files, write_files = self._collect_tool_activity(response.steps)
-        if self.show_steps and (tool_lines or read_files or write_files):
-            if not printed_section:
-                print()
-            else:
-                print()
-            self._render_tool_activity(tool_lines)
-            self._render_file_activity(read_files, write_files)
-            printed_section = True
-
-        output_text = response.final_answer or "(空响应)"
+            self._render_file_activity(displayed_reads, displayed_writes)
         if self._frame_enabled:
             print()
             self._render_output_frame(output_text)
@@ -541,7 +643,13 @@ class InteractiveSession:
             else:
                 print(output_text)
 
-        self._render_final_file_mentions(output_text, read_files, write_files)
+        self._render_final_file_mentions(
+            output_text,
+            displayed_reads,
+            displayed_writes,
+            explicit_paths,
+            known_keys
+        )
 
         if self.show_steps:
             status_text = "ok" if response.success else "fail"
@@ -557,6 +665,140 @@ class InteractiveSession:
             print(self._style("[" + " | ".join(meta_parts) + "]", "dim"))
             if not response.success and response.error_message:
                 print(self._style(f"[error] {response.error_message}", "error"))
+        return output_text
+
+    def _attach_ui_hooks(self) -> None:
+        if hasattr(self.agent, "set_ui_hooks"):
+            hooks = {
+                "llm_start": self._on_llm_start,
+                "llm_end": self._on_llm_end,
+                "tool_start": self._on_tool_start,
+                "tool_end": self._on_tool_end,
+            }
+            self.agent.set_ui_hooks(hooks)
+
+    def _detach_ui_hooks(self) -> None:
+        if hasattr(self.agent, "set_ui_hooks"):
+            self.agent.set_ui_hooks(None)
+        self._stop_thinking_indicator()
+        self._stop_tool_glow()
+
+    def _on_llm_start(self, **_kwargs) -> None:
+        self._start_thinking_indicator()
+
+    def _on_llm_end(self, **_kwargs) -> None:
+        self._stop_thinking_indicator()
+
+    def _on_tool_start(self, tool_name: str, arguments: Optional[Dict[str, Any]] = None, call_id: Optional[str] = None) -> None:
+        self._start_tool_glow(tool_name)
+
+    def _on_tool_end(
+        self,
+        tool_name: str,
+        result: Optional[Any] = None,
+        arguments: Optional[Dict[str, Any]] = None,
+        call_id: Optional[str] = None
+    ) -> None:
+        self._stop_tool_glow()
+        self._render_live_file(tool_name, arguments, result)
+
+    def _start_thinking_indicator(self) -> None:
+        if not self._animation_enabled or self._thinking_indicator:
+            return
+        style = self._resolve_animation_style()
+        raw_text, final_text = self._format_live_thinking_text()
+        if style == "glow":
+            self._thinking_indicator = GlowTextAnimator(
+                raw_text,
+                final_text,
+                self._style,
+                self._visible_len,
+                interval=0.08,
+                line_width=self._get_terminal_columns(),
+                clear_on_stop=True
+            )
+            self._thinking_indicator.start()
+            return
+        self._thinking_indicator = AnimatedIndicator(
+            message=final_text,
+            enabled=True,
+            style=style,
+            use_color=self._use_color and self._supports_ansi
+        )
+        self._thinking_indicator.start()
+
+    def _stop_thinking_indicator(self) -> None:
+        if not self._thinking_indicator:
+            return
+        self._thinking_indicator.stop()
+        self._thinking_indicator = None
+
+    def _start_tool_glow(self, tool_name: str) -> None:
+        self._stop_thinking_indicator()
+        self._stop_tool_glow()
+        raw_text, final_text = self._format_live_tool_text(tool_name)
+        if not (self._use_color and self._supports_ansi and self._animation_enabled):
+            print(final_text)
+            return
+        self._live_tool_animator = GlowTextAnimator(
+            raw_text,
+            final_text,
+            self._style,
+            self._visible_len,
+            line_width=self._get_terminal_columns()
+        )
+        self._live_tool_animator.start()
+
+    def _stop_tool_glow(self) -> None:
+        if not self._live_tool_animator:
+            return
+        self._live_tool_animator.stop()
+        self._live_tool_animator = None
+
+    def _render_live_file(
+        self,
+        tool_name: str,
+        arguments: Optional[Dict[str, Any]],
+        result: Optional[Any]
+    ) -> None:
+        if not arguments:
+            return
+        if result is not None and hasattr(result, "is_success") and not result.is_success:
+            return
+        op = str(arguments.get("operation", "")).lower()
+        if tool_name == "read_file":
+            op = "read"
+        elif tool_name == "write_file":
+            op = "write"
+        is_file_tool = tool_name in ("file", "read_file", "write_file")
+        path = None
+        if is_file_tool and op == "write":
+            path = arguments.get("path") or arguments.get("file_path") or arguments.get("file")
+        elif tool_name == "python":
+            path = arguments.get("save_to")
+        if not path:
+            return
+        key = self._normalize_path_key(path)
+        if key in self._live_file_paths:
+            return
+        self._live_file_paths.add(key)
+        color = "magenta"
+        self._print_status_line("file", self._format_clickable_path(str(path)), color)
+
+    def _format_live_tool_text(self, tool_name: str) -> Tuple[str, str]:
+        dot = "*" if self._ascii_frame else "\u25cf"
+        label = "tool"
+        raw_text = f"{dot} {label} {tool_name}".strip()
+        prefix = self._format_status_prefix(label, "cyan")
+        final_text = f"{prefix} {tool_name}".strip()
+        return raw_text, final_text
+
+    def _format_live_thinking_text(self) -> Tuple[str, str]:
+        dot = "*" if self._ascii_frame else "\u25cf"
+        label = "thinking"
+        raw_text = f"{dot} {label}".strip()
+        final_text = self._format_status_prefix(label, "blue").strip()
+        return raw_text, final_text
 
     def _handle_query(self, user_input: str) -> None:
         if not self._has_valid_api_key():
@@ -564,23 +806,16 @@ class InteractiveSession:
             return
         if self._animation_enabled:
             print()
-            style = self._resolve_animation_style()
-            indicator = AnimatedIndicator(
-                enabled=True,
-                style=style,
-                use_color=self._use_color and self._supports_ansi,
-                message_style="cyan"
-            )
-            indicator.start()
-            try:
-                response = self.agent.run(user_input)
-            finally:
-                indicator.stop()
         else:
             print(self._style("\n...", "dim"))
+        self._live_file_paths.clear()
+        self._attach_ui_hooks()
+        try:
             response = self.agent.run(user_input)
-        self.render_response(response)
-        self._record_history(user_input, response.final_answer)
+        finally:
+            self._detach_ui_hooks()
+        display_text = self.render_response(response)
+        self._record_history(user_input, display_text)
 
     def _record_history(self, question: str, answer: str) -> None:
         self.history.append({
@@ -859,7 +1094,9 @@ class InteractiveSession:
             left_border = self._style(left_border, "blue")
             right_border = self._style(right_border, "blue")
 
-        print(self._build_output_border(width, top=True, phase=self._tracker_phase))
+        printed = self._play_output_shimmer(width)
+        if not printed:
+            print(self._build_output_border(width, top=True, phase=self._tracker_phase))
         for line in self._wrap_text_lines(text, content_width):
             visible = self._display_width(line)
             if visible > content_width:
@@ -880,7 +1117,9 @@ class InteractiveSession:
             left_border = self._style(left_border, "blue")
             right_border = self._style(right_border, "blue")
 
-        print(self._build_output_border(width, top=True, phase=self._tracker_phase))
+        printed = self._play_output_shimmer(width)
+        if not printed:
+            print(self._build_output_border(width, top=True, phase=self._tracker_phase))
         sys.stdout.write(left_border + (" " * pad))
         sys.stdout.flush()
 
@@ -954,59 +1193,6 @@ class InteractiveSession:
         except Exception:
             return self._append_line_hint(str(path))
 
-    def _render_block_lines(self, text: str) -> None:
-        prefix = self._frame_chars["vertical"] if self._frame_enabled else "|"
-        if self._use_color:
-            prefix = self._style(prefix, "gray")
-        lines = text.splitlines() if text else [""]
-        for line in lines:
-            if line:
-                print(f"{prefix} {line}")
-            else:
-                print(f"{prefix}")
-
-    def _render_thinking_block(self, steps: List) -> None:
-        if not steps:
-            return
-        multi = len(steps) > 1
-        for step in steps:
-            suffix = f"{step.step_number}" if multi else ""
-            self._print_status_line("thinking", suffix, "cyan")
-            self._render_block_lines((step.thinking or "").strip())
-
-    def _parse_json_payload(self, payload: Any) -> Optional[Dict[str, Any]]:
-        if payload is None:
-            return None
-        if isinstance(payload, dict):
-            return payload
-        if isinstance(payload, str):
-            text = payload.strip()
-            if not text:
-                return None
-            if not (text.startswith("{") or text.startswith("[")):
-                return None
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                return None
-        return None
-
-    def _format_tool_detail(self, tool_name: str, result: Optional[Any]) -> str:
-        parts = []
-        if result and getattr(result, "error_message", None):
-            parts.append(f"error: {result.error_message}")
-        if tool_name == "web_search" and result:
-            payload = self._parse_json_payload(result.output)
-            if isinstance(payload, dict):
-                for key in ("error", "notice", "tavily_error", "hint"):
-                    value = payload.get(key)
-                    if value:
-                        parts.append(f"{key}: {value}")
-        if not parts:
-            return ""
-        detail = "; ".join(dict.fromkeys(parts))
-        return self._truncate(detail)
-
     def _line_may_contain_path(self, line: str) -> bool:
         lowered = line.lower()
         keywords = (
@@ -1014,6 +1200,12 @@ class InteractiveSession:
             "path", "file", "saved", "save", "output", "export", "write"
         )
         return any(keyword in lowered for keyword in keywords)
+
+    def _get_path_prefixes(self) -> Tuple[str, ...]:
+        return (
+            "file:", "path:", "文件:", "路径:", "输出文件:",
+            "保存到:", "保存为:", "output:", "saved:", "save to:"
+        )
 
     def _clean_path_token(self, text: str) -> str:
         cleaned = text.strip().strip("`\"'")
@@ -1037,6 +1229,35 @@ class InteractiveSession:
             return True
         return False
 
+    def _split_output_path_lines(self, text: str) -> Tuple[str, List[str]]:
+        if not text:
+            return "", []
+        prefixes = self._get_path_prefixes()
+        kept_lines = []
+        path_lines = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                kept_lines.append(line)
+                continue
+            candidate = None
+            lowered = stripped.lower()
+            for prefix in prefixes:
+                if lowered.startswith(prefix):
+                    candidate = self._clean_path_token(stripped[len(prefix):].strip())
+                    break
+            if candidate is None:
+                candidate = self._clean_path_token(stripped)
+                if candidate == stripped and self._looks_like_path(candidate):
+                    path_lines.append(candidate)
+                    continue
+            if candidate and self._looks_like_path(candidate):
+                path_lines.append(candidate)
+                continue
+            kept_lines.append(line)
+        cleaned = "\n".join(kept_lines).strip()
+        return cleaned, path_lines
+
     def _extract_paths_from_text(self, text: str) -> List[str]:
         if not text:
             return []
@@ -1048,7 +1269,7 @@ class InteractiveSession:
             r"(?P<path>(?:workspace|outputs|dataset)[/\\\\][^\s\"'<>|]+(?::\d+)?)",
             r"(?P<path>/(?:[^\s\"'<>|]+/)*[^\s\"'<>|]+(?::\d+)?)",
         ]
-        prefixes = ("file:", "path:", "文件:", "路径:", "输出文件:", "保存到:", "保存为:", "output:", "saved:", "save to:")
+        prefixes = self._get_path_prefixes()
 
         for line in text.splitlines():
             stripped = line.strip()
@@ -1099,11 +1320,21 @@ class InteractiveSession:
         except Exception:
             return raw.lower()
 
-    def _render_final_file_mentions(self, output_text: str, read_files: List[str], write_files: List[str]) -> None:
-        extracted = self._extract_paths_from_text(output_text)
+    def _render_final_file_mentions(
+        self,
+        output_text: str,
+        read_files: List[str],
+        write_files: List[str],
+        extra_paths: Optional[List[str]] = None,
+        known_keys: Optional[Set[str]] = None
+    ) -> None:
+        extracted = []
+        if extra_paths:
+            extracted.extend(extra_paths)
+        extracted.extend(self._extract_paths_from_text(output_text))
         if not extracted:
             return
-        known = set()
+        known = set(known_keys or [])
         for path in read_files + write_files:
             known.add(self._normalize_path_key(path))
         for path in extracted:
@@ -1113,17 +1344,15 @@ class InteractiveSession:
             known.add(key)
             self._print_status_line("file", self._format_clickable_path(path), "magenta")
 
-    def _collect_tool_activity(self, steps: List) -> Tuple[List[str], List[str], List[str]]:
-        tool_lines = []
+    def _collect_file_activity(self, steps: List) -> Tuple[List[str], List[str]]:
         read_files = []
         write_files = []
         seen_reads = set()
         seen_writes = set()
         if not steps:
-            return tool_lines, read_files, write_files
+            return read_files, write_files
         for step in steps:
-            results = step.tool_results or []
-            for idx, call in enumerate(step.tool_calls):
+            for call in step.tool_calls:
                 tool_name = call.tool_name
                 args = call.arguments or {}
                 op = str(args.get("operation", "")).lower()
@@ -1158,20 +1387,7 @@ class InteractiveSession:
                         if save_to not in seen_writes:
                             write_files.append(save_to)
                             seen_writes.add(save_to)
-                if tool_name:
-                    result = results[idx] if idx < len(results) else None
-                    detail = self._format_tool_detail(tool_name, result)
-                    if is_file_tool and path:
-                        continue
-                    if detail:
-                        tool_lines.append(f"{tool_name} ({detail})")
-                    else:
-                        tool_lines.append(tool_name)
-        return tool_lines, read_files, write_files
-
-    def _render_tool_activity(self, tool_lines: List[str]) -> None:
-        for tool_name in tool_lines:
-            self._print_status_line("tool", tool_name, "cyan")
+        return read_files, write_files
 
     def _render_file_activity(self, read_files: List[str], write_files: List[str]) -> None:
         for path in read_files:
@@ -1380,7 +1596,9 @@ class InteractiveSession:
             width = os.get_terminal_size().columns
         except OSError:
             width = 72
-        return max(60, min(width, 120))
+        if width <= 0:
+            width = 72
+        return width
 
     def _cmd_help(self, args: List[str]) -> None:
         self._print_title("可用命令")
@@ -1390,7 +1608,6 @@ class InteractiveSession:
         print("/status               查看Agent状态")
         print("/files                查看文件上下文")
         print("/context [on|off]      切换显式上下文模式")
-        print("/thinking [on|off]     切换思考过程展示")
         print("/steps [on|off]        切换步骤概览展示")
         print("/multiline [on|off]    切换多行输入模式")
         print("/history [n]           查看最近n条对话")
@@ -1453,15 +1670,6 @@ class InteractiveSession:
             self.agent.toggle_verbose_context()
         return self.agent.verbose_context
 
-    def _cmd_thinking(self, args: List[str]) -> None:
-        desired = self._parse_bool_arg(args)
-        if desired is None:
-            self.show_thinking = not self.show_thinking
-        else:
-            self.show_thinking = desired
-        status_text = "开启" if self.show_thinking else "关闭"
-        print(f"思考过程展示: {status_text}")
-
     def _cmd_steps(self, args: List[str]) -> None:
         desired = self._parse_bool_arg(args)
         if desired is None:
@@ -1510,7 +1718,7 @@ class InteractiveSession:
         配置动画样式
         """
         if not args:
-            styles = ", ".join(AnimatedIndicator.STYLES)
+            styles = ", ".join(ANIMATION_STYLES)
             status = "开启" if self._animation_enabled else "关闭"
             current = self._animation_style
             print(f"动画状态: {status}, 当前样式: {current}")
@@ -1530,12 +1738,12 @@ class InteractiveSession:
             self._animation_style = "auto"
             print("动画样式已设置为 auto。")
             return
-        if value in AnimatedIndicator.STYLES:
+        if value in ANIMATION_STYLES:
             self._animation_style = value
             print(f"动画样式已设置为 {value}。")
             return
 
-        styles = ", ".join(AnimatedIndicator.STYLES)
+        styles = ", ".join(ANIMATION_STYLES)
         print(f"未知样式: {value}，可用样式: {styles}, auto")
 
     def _cmd_stream(self, args: List[str]) -> None:
@@ -1966,6 +2174,31 @@ class InteractiveSession:
             sys.stdout.flush()
             time.sleep(0.02)
 
+    def _play_output_shimmer(self, width: int) -> bool:
+        if not self._frame_enabled or not self._supports_ansi or not self._use_color:
+            return False
+        inner_width = width - 2
+        if inner_width < 6:
+            print(self._build_output_border(width, top=True, phase=self._tracker_phase))
+            return True
+        span = min(self._frame_shimmer_span + 4, inner_width)
+        steps = 2
+        for step in range(steps):
+            pos = (self._tracker_phase + step * (span + 2)) % inner_width
+            line = self._build_output_border(
+                width,
+                top=True,
+                highlight=(pos, span),
+                phase=self._tracker_phase + step
+            )
+            if step == 0:
+                sys.stdout.write(line + "\n")
+            else:
+                sys.stdout.write("\x1b[1A\r\x1b[2K" + line + "\n")
+            sys.stdout.flush()
+            time.sleep(0.02)
+        return True
+
     def _build_frame_border(
         self,
         width: int,
@@ -2144,7 +2377,7 @@ class InteractiveSession:
         """
         if self._animation_style != "auto":
             return self._animation_style
-        style = AnimatedIndicator.STYLES[self._animation_index % len(AnimatedIndicator.STYLES)]
+        style = ANIMATION_STYLES[self._animation_index % len(ANIMATION_STYLES)]
         self._animation_index += 1
         return style
 
@@ -2164,6 +2397,7 @@ class InteractiveSession:
             "green": "\x1b[32m",
             "yellow": "\x1b[33m",
             "gray": "\x1b[90m",
+            "white": "\x1b[37m",
         }
         prefix = styles.get(style)
         if not prefix:
@@ -2356,27 +2590,38 @@ class InteractiveSession:
         print("  api_key: \"your-real-api-key\"")
 
 
-def interactive_mode(agent: BaseAgent, show_thinking: bool = True, show_steps: bool = True) -> None:
+def interactive_mode(agent: BaseAgent, show_steps: bool = True) -> None:
     """
     交互模式 / Interactive mode
     
     Args:
         agent: Agent实例 / Agent instance
+        show_steps: 是否显示步骤信息 / Show step info
     """
-    session = InteractiveSession(agent, show_thinking=show_thinking, show_steps=show_steps)
+    session = InteractiveSession(agent, show_steps=show_steps)
     session.run()
 
 
-def single_query(agent: BaseAgent, query: str, show_thinking: bool = True, show_steps: bool = True) -> None:
+def single_query(agent: BaseAgent, query: str, show_steps: bool = True) -> None:
     """
     单次查询模式 / Single query mode
     
     Args:
         agent: Agent实例 / Agent instance
         query: 用户查询 / User query
+        show_steps: 是否显示步骤信息 / Show step info
     """
-    response = agent.run(query)
-    session = InteractiveSession(agent, show_thinking=show_thinking, show_steps=show_steps)
+    session = InteractiveSession(agent, show_steps=show_steps)
+    if session._animation_enabled:
+        print()
+    else:
+        print(session._style("\n...", "dim"))
+    session._live_file_paths.clear()
+    session._attach_ui_hooks()
+    try:
+        response = agent.run(query)
+    finally:
+        session._detach_ui_hooks()
     session.render_response(response)
 
 
@@ -2441,19 +2686,15 @@ def main():
         # 创建Agent / Create Agent
         logger.info("正在初始化Agent / Initializing Agent...")
         agent = create_agent()
-        if args.query:
-            show_thinking = args.verbose or config.agent.verbose
-        else:
-            show_thinking = args.verbose
         show_steps = True
         
         # 根据参数选择模式 / Select mode based on arguments
         if args.query:
             # 单次查询模式 / Single query mode
-            single_query(agent, args.query, show_thinking=show_thinking, show_steps=show_steps)
+            single_query(agent, args.query, show_steps=show_steps)
         else:
             # 交互模式 / Interactive mode
-            interactive_mode(agent, show_thinking=show_thinking, show_steps=show_steps)
+            interactive_mode(agent, show_steps=show_steps)
             
     except KeyboardInterrupt:
         print("\n\n再见 / Goodbye!")

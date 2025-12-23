@@ -105,7 +105,7 @@ tools:
   search_tool:
     enabled: true
     # 搜索API配置 / Search API configuration
-    api_key: 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
+    api_key: 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
     engine: tavily
 
 # 日志配置 / Logging Configuration

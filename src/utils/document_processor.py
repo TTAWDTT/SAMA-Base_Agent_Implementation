@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.core.logger import get_logger
+from src.utils.encoding import decode_output_bytes
 
 logger = get_logger("utils.document_processor")
 
@@ -493,14 +494,13 @@ class DocumentConverter:
             result = subprocess.run(
                 [antiword_cmd, file_path],
                 capture_output=True,
-                text=True,
                 timeout=30,
-                encoding='utf-8',
-                errors='replace'
+                text=False
             )
-            if result.returncode == 0 and result.stdout.strip():
+            stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
+            if result.returncode == 0 and stdout_text.strip():
                 logger.info(f"使用antiword成功转换.doc文件 / Successfully converted .doc file using antiword: {file_path}")
-                return result.stdout
+                return stdout_text
         except FileNotFoundError:
             logger.debug("antiword未安装 / antiword not installed")
         except subprocess.TimeoutExpired:
@@ -514,14 +514,13 @@ class DocumentConverter:
             result = subprocess.run(
                 ["catdoc", file_path],
                 capture_output=True,
-                text=True,
                 timeout=30,
-                encoding='utf-8',
-                errors='replace'
+                text=False
             )
-            if result.returncode == 0 and result.stdout.strip():
+            stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
+            if result.returncode == 0 and stdout_text.strip():
                 logger.info(f"使用catdoc成功转换.doc文件 / Successfully converted .doc file using catdoc: {file_path}")
-                return result.stdout
+                return stdout_text
         except FileNotFoundError:
             logger.debug("catdoc未安装 / catdoc not installed")
         except Exception as e:

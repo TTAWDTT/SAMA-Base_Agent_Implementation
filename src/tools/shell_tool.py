@@ -20,6 +20,7 @@ from pydantic import Field
 
 from src.core.config import get_config
 from src.tools.base import BaseTool, ToolInput
+from src.utils.encoding import decode_output_bytes
 
 
 class ShellInput(ToolInput):
@@ -321,20 +322,20 @@ Executes commands in system shell and returns results. Supports Windows and Unix
                 command,
                 shell=self.shell,
                 capture_output=True,
-                text=True,
                 timeout=exec_timeout,
                 cwd=cwd,
-                encoding='utf-8',
-                errors='replace'
+                text=False
             )
             
             output_parts = []
             
-            if result.stdout:
-                output_parts.append(f"标准输出 / Stdout:\n{result.stdout}")
+            stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
+            if stdout_text:
+                output_parts.append(f"标准输出 / Stdout:\n{stdout_text}")
             
-            if result.stderr:
-                output_parts.append(f"标准错误 / Stderr:\n{result.stderr}")
+            stderr_text = decode_output_bytes(result.stderr) if result.stderr else ""
+            if stderr_text:
+                output_parts.append(f"标准错误 / Stderr:\n{stderr_text}")
             
             if result.returncode != 0:
                 output_parts.append(f"返回码 / Return code: {result.returncode}")
