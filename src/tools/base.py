@@ -1,8 +1,7 @@
 # ==============================================================================
-# 工具基类模块 / Tool Base Module
+# 工具基类模块
 # ==============================================================================
 # 定义所有工具的基类和通用接口
-# Defines base class and common interface for all tools
 # ==============================================================================
 
 from abc import ABC, abstractmethod
@@ -18,98 +17,91 @@ logger = get_logger("tools.base")
 
 class ToolInput(BaseModel):
     """
-    工具输入基类 / Tool Input Base Class
-    
+    工具输入基类
+
     所有工具输入参数应继承此类
-    All tool input parameters should inherit from this class
     """
     pass
 
 
 class BaseTool(ABC):
     """
-    工具基类 / Tool Base Class
-    
+    工具基类
+
     所有自定义工具都应继承此类并实现相关方法
-    All custom tools should inherit from this class and implement related methods
     """
     
-    # 工具名称 / Tool name
+    # 工具名称
     name: str = "base_tool"
     
-    # 工具描述（用于LLM理解工具功能）/ Tool description (for LLM to understand tool functionality)
-    description: str = "基础工具 / Base tool"
+    # 工具描述（用于模型理解工具功能）
+    description: str = "基础工具"
     
-    # 工具描述（中文版）/ Tool description (Chinese version)
+    # 工具描述（中文版）
     description_zh: str = "基础工具"
     
-    # 工具描述（英文版）/ Tool description (English version)
-    description_en: str = "Base tool"
-    
-    # 输入参数Schema / Input parameter schema
+    # 输入参数结构
     input_schema: Optional[Type[ToolInput]] = None
 
     # 是否允许子进程隔离执行
     subprocess_safe: bool = False
     
     def __init__(self):
-        """初始化工具 / Initialize tool"""
+        """初始化工具"""
         self.logger = get_logger(f"tools.{self.name}")
     
     @abstractmethod
     def _run(self, **kwargs) -> Any:
         """
-        执行工具（同步）/ Execute tool (synchronous)
-        
+        执行工具（同步）
+
         子类必须实现此方法
-        Subclasses must implement this method
-        
+
         Args:
-            **kwargs: 工具参数 / Tool parameters
-            
+            **kwargs: 工具参数
+
         Returns:
-            Any: 工具执行结果 / Tool execution result
+            Any: 工具执行结果
         """
         pass
     
     async def _arun(self, **kwargs) -> Any:
         """
-        执行工具（异步）/ Execute tool (asynchronous)
-        
+        执行工具（异步）
+
         默认调用同步方法，子类可以覆盖此方法实现异步执行
-        Defaults to calling sync method, subclasses can override for async execution
-        
+
         Args:
-            **kwargs: 工具参数 / Tool parameters
-            
+            **kwargs: 工具参数
+
         Returns:
-            Any: 工具执行结果 / Tool execution result
+            Any: 工具执行结果
         """
         return self._run(**kwargs)
     
     def run(self, **kwargs) -> ToolResult:
         """
-        运行工具并返回标准化结果 / Run tool and return standardized result
-        
+        运行工具并返回标准化结果
+
         Args:
-            **kwargs: 工具参数 / Tool parameters
-            
+            **kwargs: 工具参数
+
         Returns:
-            ToolResult: 标准化的工具执行结果 / Standardized tool execution result
+            ToolResult: 标准化的工具执行结果
         """
         import time
         
         start_time = time.time()
         
         try:
-            self.logger.info(f"执行工具 / Executing tool: {self.name}")
-            self.logger.debug(f"参数 / Parameters: {kwargs}")
+            self.logger.info(f"执行工具: {self.name}")
+            self.logger.debug(f"参数: {kwargs}")
             
             result = self._run(**kwargs)
             
             execution_time = time.time() - start_time
             
-            self.logger.info(f"工具执行成功 / Tool executed successfully: {self.name}")
+            self.logger.info(f"工具执行成功: {self.name}")
             
             return ToolResult(
                 tool_name=self.name,
@@ -120,7 +112,7 @@ class BaseTool(ABC):
             
         except TimeoutError as e:
             execution_time = time.time() - start_time
-            error_msg = f"工具执行超时 / Tool execution timeout: {str(e)}"
+            error_msg = f"工具执行超时: {str(e)}"
             self.logger.error(error_msg)
             
             return ToolResult(
@@ -133,7 +125,7 @@ class BaseTool(ABC):
             
         except Exception as e:
             execution_time = time.time() - start_time
-            error_msg = f"工具执行错误 / Tool execution error: {str(e)}"
+            error_msg = f"工具执行错误: {str(e)}"
             self.logger.error(error_msg)
             
             return ToolResult(
@@ -146,27 +138,27 @@ class BaseTool(ABC):
     
     async def arun(self, **kwargs) -> ToolResult:
         """
-        异步运行工具并返回标准化结果 / Run tool asynchronously and return standardized result
-        
+        异步运行工具并返回标准化结果
+
         Args:
-            **kwargs: 工具参数 / Tool parameters
-            
+            **kwargs: 工具参数
+
         Returns:
-            ToolResult: 标准化的工具执行结果 / Standardized tool execution result
+            ToolResult: 标准化的工具执行结果
         """
         import time
         
         start_time = time.time()
         
         try:
-            self.logger.info(f"异步执行工具 / Executing tool asynchronously: {self.name}")
-            self.logger.debug(f"参数 / Parameters: {kwargs}")
+            self.logger.info(f"异步执行工具: {self.name}")
+            self.logger.debug(f"参数: {kwargs}")
             
             result = await self._arun(**kwargs)
             
             execution_time = time.time() - start_time
             
-            self.logger.info(f"工具执行成功 / Tool executed successfully: {self.name}")
+            self.logger.info(f"工具执行成功: {self.name}")
             
             return ToolResult(
                 tool_name=self.name,
@@ -177,7 +169,7 @@ class BaseTool(ABC):
             
         except TimeoutError as e:
             execution_time = time.time() - start_time
-            error_msg = f"工具执行超时 / Tool execution timeout: {str(e)}"
+            error_msg = f"工具执行超时: {str(e)}"
             self.logger.error(error_msg)
             
             return ToolResult(
@@ -190,7 +182,7 @@ class BaseTool(ABC):
             
         except Exception as e:
             execution_time = time.time() - start_time
-            error_msg = f"工具执行错误 / Tool execution error: {str(e)}"
+            error_msg = f"工具执行错误: {str(e)}"
             self.logger.error(error_msg)
             
             return ToolResult(
@@ -203,29 +195,25 @@ class BaseTool(ABC):
     
     def get_schema(self) -> Dict[str, Any]:
         """
-        获取工具的JSON Schema定义 / Get tool's JSON Schema definition
-        
+        获取工具的JSON Schema定义
+
         用于LLM的函数调用（符合Kimi API要求）
-        Used for LLM function calling (compliant with Kimi API requirements)
-        
+
         Returns:
-            Dict: JSON Schema格式的工具定义 / Tool definition in JSON Schema format
+            Dict: JSON Schema格式的工具定义
         """
-        # 基础参数架构（符合Kimi要求）
-        # Basic parameter schema (compliant with Kimi requirements)
+        # 基础参数结构（符合接口要求）
         parameters = {
             "type": "object",
             "properties": {},
             "required": []
         }
         
-        # 如果定义了输入Schema，使用Pydantic生成并进行验证
-        # If input schema is defined, use Pydantic to generate and validate
+        # 如果定义了输入结构，使用模型生成并校验
         if self.input_schema:
             pydantic_schema = self.input_schema.model_json_schema()
             
-            # 提取properties和required，确保符合Kimi格式
-            # Extract properties and required, ensure compliance with Kimi format
+            # 提取字段与必填项，确保符合接口格式
             if "properties" in pydantic_schema:
                 parameters["properties"] = pydantic_schema["properties"]
             
@@ -236,7 +224,7 @@ class BaseTool(ABC):
             "type": "function",
             "function": {
                 "name": self.name,
-                "description": self.description if self.description else f"{self.name} tool",
+                "description": self.description if self.description else f"{self.name} 工具",
                 "parameters": parameters
             }
         }
@@ -251,12 +239,12 @@ class BaseTool(ABC):
 
     def can_run_in_parallel(self, arguments: Dict[str, Any]) -> bool:
         """
-        判断是否允许并行执行 / Whether tool can run in parallel
+        判断是否允许并行执行
         """
         return True
     
     def __str__(self) -> str:
-        return f"Tool(name={self.name})"
+        return f"工具(name={self.name})"
     
     def __repr__(self) -> str:
-        return f"Tool(name={self.name}, description={self.description})"
+        return f"工具(name={self.name}, description={self.description})"

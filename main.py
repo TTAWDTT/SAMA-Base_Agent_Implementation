@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# AI Agent 主入口 / AI Agent Main Entry Point
+# 智能体主入口
 # ==============================================================================
-# 使用方法 / Usage:
-#   python main.py                    # 交互模式 / Interactive mode
-#   python main.py --help             # 显示帮助 / Show help
-#   python main.py -q "你好"          # 单次查询 / Single query
+# 使用方法
+#   python main.py                    # 交互模式
+#   python main.py --help             # 显示帮助
+#   python main.py -q "你好"          # 单次查询
 # ==============================================================================
 
 import argparse
@@ -32,7 +32,7 @@ except ImportError:
 
 from src import BaseAgent, get_config, init_logging, get_logger
 
-# 修复 Windows 编码问题 / Fix Windows encoding issues
+# 修复 Windows 编码问题
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
@@ -57,28 +57,6 @@ LOGO = [
     "##   ##" + "  " + "##   ##" + "  " + "##   ##" + "  " + "##   ##",
     " ##### " + "  " + "##   ##" + "  " + "##   ##" + "  " + "##   ##",
 ]
-
-SPRITE = [
-    "            .-====-.",
-    "         .-##########-.",
-    "       .-##############-.",
-    "      /#######  @  #######\\",
-    "     /######## #### ########\\",
-    "    |######### #### #########|",
-    "    |######### #### #########|",
-    "    |######### ##@# #########|",
-    "    |######### #### #########|",
-    "    |######### #### #########|",
-    "    |######### #### #########|",
-    "     \\######## #### ########/",
-    "      \\#######  ##  #######/",
-    "       '-##############-'",
-    "          '-########-'",
-    "             '-##-'",
-    "             .-**-.",
-    "              '--'",
-]
-
 
 class AnimatedIndicator:
     """
@@ -1547,37 +1525,6 @@ class InteractiveSession:
             block.append(self._style(shadow, "gray"))
         return block
 
-    def _build_sprite_block(self, dim: bool = False) -> List[str]:
-        """
-        构建精灵文本块
-        """
-        block = []
-        color_map = {
-            "#": "green",
-            "@": "yellow",
-            "*": "magenta",
-            ".": "gray",
-            "-": "blue",
-            "=": "blue",
-            "/": "cyan",
-            "\\": "cyan",
-            "|": "cyan",
-            "'": "gray",
-        }
-        for line in SPRITE:
-            if dim:
-                block.append(self._style(line, "gray"))
-                continue
-            colored = []
-            for ch in line:
-                style = color_map.get(ch)
-                if style:
-                    colored.append(self._style(ch, style))
-                else:
-                    colored.append(ch)
-            block.append("".join(colored))
-        return block
-
     def _merge_blocks(
         self,
         left: List[str],
@@ -2598,35 +2545,6 @@ class InteractiveSession:
             return " " * width
         return "".join(pattern[(i + offset) % len(pattern)] for i in range(width))
 
-    def _play_logo_glow(
-        self,
-        sprite_block: List[str],
-        width: int,
-        height: int,
-        base_offset: int
-    ) -> None:
-        """
-        Logo glow pulse
-        """
-        if not self._supports_ansi:
-            return
-        palettes = [
-            ["cyan", "blue", "magenta", "blue", "cyan"],
-            ["magenta", "cyan", "blue", "cyan", "magenta"],
-            ["blue", "magenta", "cyan", "magenta", "blue"],
-        ]
-        for palette in palettes:
-            logo_block = self._build_logo_block(palette=palette)
-            frame = self._merge_blocks(
-                logo_block,
-                sprite_block,
-                gap=4,
-                width_limit=width,
-                right_offset=base_offset
-            )
-            self._redraw_block(frame, height)
-            time.sleep(0.04)
-
     def _redraw_block(self, lines: List[str], height: int) -> None:
         """
         使用ANSI重绘文本块
@@ -2639,29 +2557,6 @@ class InteractiveSession:
         for line in lines:
             print("\x1b[2K" + line)
         sys.stdout.flush()
-
-    def _play_sprite_jump(
-        self,
-        logo_block: List[str],
-        sprite_block: List[str],
-        width: int,
-        height: int,
-        base_offset: int
-    ) -> None:
-        """
-        精灵跳动动画
-        """
-        offsets = [0, -1, -2, -1, 0]
-        for offset in offsets:
-            frame = self._merge_blocks(
-                logo_block,
-                sprite_block,
-                gap=4,
-                width_limit=width,
-                right_offset=base_offset + offset
-            )
-            self._redraw_block(frame, height)
-            time.sleep(0.05)
 
     def _has_valid_api_key(self) -> bool:
         key = (self.agent.config.model.api_key or "").strip()
@@ -2716,32 +2611,32 @@ def single_query(agent: BaseAgent, query: str, show_steps: bool = True) -> None:
 
 def main():
     """
-    主函数 / Main function
+    主函数
     """
-    # 解析命令行参数 / Parse command line arguments
+    # 解析命令行参数
     parser = argparse.ArgumentParser(
-        description="AI Agent - 一个基于LLM的智能助手 / An LLM-based intelligent assistant",
+        description="AI Agent - 一个基于LLM的智能助手",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例 / Examples:
-  python main.py                    # 交互模式 / Interactive mode
-  python main.py -q "计算 2+2"      # 单次查询 / Single query
-  python main.py --verbose          # 详细输出模式 / Verbose mode
+示例：
+  python main.py                    # 交互模式
+  python main.py -q "计算 2+2"      # 单次查询
+  python main.py --verbose          # 详细输出模式
 
-更多信息请参阅 README.md / For more information, see README.md
+更多信息请参阅 README.md
         """
     )
     
     parser.add_argument(
         "-q", "--query",
         type=str,
-        help="单次查询模式，直接处理指定问题 / Single query mode, directly process the specified question"
+        help="单次查询模式，直接处理指定问题"
     )
     
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="启用详细输出 / Enable verbose output"
+        help="启用详细输出"
     )
     
     parser.add_argument(
@@ -2752,12 +2647,12 @@ def main():
     
     args = parser.parse_args()
     
-    # 检查配置 / Check configuration
+    # 检查配置
     config = get_config()
     if not args.verbose:
         config.logging.console_output = False
 
-    # 初始化日志 / Initialize logging
+    # 初始化日志
     init_logging()
     logger = get_logger("main")
     if not config.model.api_key or config.model.api_key == "your-api-key-here":
@@ -2767,22 +2662,21 @@ def main():
             print("Please configure your API key in config.yaml")
             print("或设置环境变量 OPENAI_API_KEY / Or set environment variable OPENAI_API_KEY\n")
         # 在非查询模式下仍然允许进入交互模式，方便测试
-        # Still allow entering interactive mode in non-query mode for testing
         if args.query:
             sys.exit(1)
     
     try:
-        # 创建Agent / Create Agent
+        # 创建智能体
         logger.info("正在初始化Agent / Initializing Agent...")
         agent = create_agent()
         show_steps = True
         
-        # 根据参数选择模式 / Select mode based on arguments
+        # 根据参数选择模式
         if args.query:
-            # 单次查询模式 / Single query mode
+            # 单次查询模式
             single_query(agent, args.query, show_steps=show_steps)
         else:
-            # 交互模式 / Interactive mode
+            # 交互模式
             interactive_mode(agent, show_steps=show_steps)
             
     except KeyboardInterrupt:

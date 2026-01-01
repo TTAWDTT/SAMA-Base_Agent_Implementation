@@ -1,8 +1,7 @@
 # ==============================================================================
-# 对话记忆模块 / Conversation Memory Module
+# 对话记忆模块
 # ==============================================================================
-# 管理Agent的对话历史和上下文
-# Manages Agent's conversation history and context
+# 管理智能体的对话历史和上下文
 # ==============================================================================
 
 from dataclasses import dataclass, field
@@ -17,10 +16,9 @@ from src.utils.helpers import estimate_tokens, truncate_text
 @dataclass
 class FileContext:
     """
-    文件上下文 / File Context
-    
-    管理Agent工作过程中涉及的文件
-    Manages files involved in Agent's work process
+    文件上下文
+
+    管理智能体工作过程中涉及的文件
     """
     path: str
     content: Optional[str] = None
@@ -29,7 +27,7 @@ class FileContext:
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式 / Convert to dictionary format"""
+        """转换为字典格式"""
         return {
             "path": self.path,
             "content": self.content,
@@ -39,18 +37,17 @@ class FileContext:
         }
     
     def get_summary(self) -> str:
-        """获取文件摘要信息 / Get file summary"""
-        size_info = f"({len(self.content)} chars)" if self.content else "(no content)"
+        """获取文件摘要信息"""
+        size_info = f"({len(self.content)} 字符)" if self.content else "(无内容)"
         return f"{self.path} {size_info}: {self.abstract}"
 
 
 @dataclass
 class Message:
     """
-    消息数据类 / Message Data Class
-    
+    消息数据类
+
     表示对话中的单条消息
-    Represents a single message in the conversation
     """
     role: str  # "user", "assistant", "system", "tool"
     content: str
@@ -58,7 +55,7 @@ class Message:
     metadata: Dict[str, Any] = field(default_factory=dict)
     
     def to_dict(self) -> Dict[str, Any]:
-        """转换为字典格式 / Convert to dictionary format"""
+        """转换为字典格式"""
         return {
             "role": self.role,
             "content": self.content,
@@ -68,10 +65,10 @@ class Message:
     
     def to_openai_format(self) -> Dict[str, Any]:
         """
-        转换为OpenAI API格式 / Convert to OpenAI API format
-        
+        转换为OpenAI API格式
+
         Returns:
-            Dict: OpenAI格式的消息 / Message in OpenAI format
+            Dict: OpenAI格式的消息
         """
         msg: Dict[str, Any] = {"role": self.role, "content": self.content}
 
@@ -89,18 +86,17 @@ class Message:
 
 class ConversationMemory:
     """
-    对话记忆类 / Conversation Memory Class
-    
+    对话记忆类
+
     管理对话历史，支持添加、检索和清理消息
-    Manages conversation history, supports adding, retrieving and clearing messages
     """
     
     def __init__(self, max_entries: Optional[int] = None):
         """
-        初始化对话记忆 / Initialize conversation memory
-        
+        初始化对话记忆
+
         Args:
-            max_entries: 最大记忆条数 / Maximum memory entries
+            max_entries: 最大记忆条数
         """
         config = get_config()
         self.max_entries = max_entries or config.memory.max_entries
@@ -117,49 +113,48 @@ class ConversationMemory:
         self.file_context_query_messages = config.memory.file_context_query_messages
         self.messages: List[Message] = []
         self.system_message: Optional[Message] = None
-        self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径 / File context dict, key is file path
+        self.files: Dict[str, FileContext] = {}  # 文件上下文字典，key为文件路径
         self.summary = ""
     
     def set_system_message(self, content: str) -> None:
         """
-        设置系统消息 / Set system message
-        
+        设置系统消息
+
         系统消息始终位于对话开头
-        System message is always at the beginning of the conversation
-        
+
         Args:
-            content: 系统消息内容 / System message content
+            content: 系统消息内容
         """
         self.system_message = Message(role="system", content=content)
     
     def add_user_message(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
-        添加用户消息 / Add user message
-        
+        添加用户消息
+
         Args:
-            content: 消息内容 / Message content
-            metadata: 元数据 / Metadata
+            content: 消息内容
+            metadata: 元数据
         """
         self._add_message("user", content, metadata)
     
     def add_assistant_message(self, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
-        添加助手消息 / Add assistant message
-        
+        添加助手消息
+
         Args:
-            content: 消息内容 / Message content
-            metadata: 元数据 / Metadata
+            content: 消息内容
+            metadata: 元数据
         """
         self._add_message("assistant", content, metadata)
     
     def add_tool_message(self, content: str, tool_name: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
-        添加工具消息 / Add tool message
-        
+        添加工具消息
+
         Args:
-            content: 消息内容 / Message content
-            tool_name: 工具名称 / Tool name
-            metadata: 元数据 / Metadata
+            content: 消息内容
+            tool_name: 工具名称
+            metadata: 元数据
         """
         meta = metadata or {}
         meta["tool_name"] = tool_name
@@ -167,12 +162,12 @@ class ConversationMemory:
     
     def _add_message(self, role: str, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         """
-        内部方法：添加消息 / Internal method: add message
-        
+        内部方法：添加消息
+
         Args:
-            role: 角色 / Role
-            content: 内容 / Content
-            metadata: 元数据 / Metadata
+            role: 角色
+            content: 内容
+            metadata: 元数据
         """
         message = Message(
             role=role,
@@ -186,16 +181,15 @@ class ConversationMemory:
             self._summarize_if_needed()
         else:
             # 如果超过最大条数，删除最早的消息（保留系统消息）
-            # If exceeds max entries, remove oldest messages (keep system message)
             while len(self.messages) > self.max_entries:
                 self.messages.pop(0)
     
     def get_messages(self) -> List[Message]:
         """
-        获取所有消息（包括系统消息）/ Get all messages (including system message)
-        
+        获取所有消息（包括系统消息）
+
         Returns:
-            List[Message]: 消息列表 / List of messages
+            List[Message]: 消息列表
         """
         if self.system_message:
             return [self.system_message] + self.messages
@@ -203,32 +197,32 @@ class ConversationMemory:
     
     def get_openai_messages(self) -> List[Dict[str, str]]:
         """
-        获取OpenAI格式的消息列表（包含文件上下文）/ Get messages in OpenAI format (including file context)
-        
-        消息顺序 / Message order:
-        1. 系统消息 / System message
-        2. 摘要消息（可选）/ Summary message (optional)
-        3. 文件内容消息（可选）/ File context message (optional)
-        4. 对话历史 / Conversation history
-        
+        获取OpenAI格式的消息列表（包含文件上下文）
+
+        消息顺序：
+        1. 系统消息
+        2. 摘要消息（可选）
+        3. 文件内容消息（可选）
+        4. 对话历史
+
         Returns:
-            List[Dict]: OpenAI格式的消息列表 / List of messages in OpenAI format
+            List[Dict]: OpenAI格式的消息列表
         """
         system_messages: List[Dict[str, Any]] = []
         summary_message: Optional[Dict[str, Any]] = None
 
-        # 1. 添加系统消息 / Add system message
+        # 1. 添加系统消息
         if self.system_message:
             system_messages.append(self.system_message.to_openai_format())
 
-        # 2. 构建摘要消息（可选）/ Build summary message if present
+        # 2. 构建摘要消息（可选）
         if self.summary:
             summary_message = {
                 "role": "system",
-                "content": "## 对话摘要 / Conversation Summary\n" + self.summary
+                "content": "## 对话摘要\n" + self.summary
             }
 
-        # 3. 构建对话历史 / Build conversation history
+        # 3. 构建对话历史
         history_messages = [msg.to_openai_format() for msg in self.messages]
 
         query_text = self._get_recent_user_text(self.file_context_query_messages)
@@ -247,7 +241,7 @@ class ConversationMemory:
         query_text: str
     ) -> List[Dict[str, Any]]:
         """
-        根据分层预算裁剪消息 / Trim messages by layered budget
+        根据分层预算裁剪消息
         """
         def _msg_tokens(msg: Dict[str, Any]) -> int:
             return estimate_tokens(msg.get("content", "") or "")
@@ -264,7 +258,7 @@ class ConversationMemory:
 
         messages = list(system_messages)
 
-        # 控制系统摘要预算 / Apply system summary budget
+        # 控制系统摘要预算
         if summary_message:
             system_budget = int(self.max_context_tokens * max(self.system_token_ratio, 0.0))
             if system_budget < 0:
@@ -296,7 +290,7 @@ class ConversationMemory:
     
     def _normalize_budget_ratios(self, file_ratio: float, history_ratio: float) -> Tuple[float, float]:
         """
-        归一化文件/历史预算比例 / Normalize file/history budget ratios
+        归一化文件与历史预算比例
         """
         safe_file = max(file_ratio, 0.0)
         safe_history = max(history_ratio, 0.0)
@@ -311,7 +305,7 @@ class ConversationMemory:
         max_tokens: int
     ) -> List[Dict[str, Any]]:
         """
-        裁剪对话历史 / Trim conversation history to token budget
+        按预算裁剪对话历史
         """
         if max_tokens <= 0:
             return []
@@ -328,7 +322,7 @@ class ConversationMemory:
 
     def _get_recent_user_text(self, max_messages: int = 3) -> str:
         """
-        汇总最近用户消息用于检索 / Build recent user text for retrieval
+        汇总最近用户消息用于检索
         """
         if max_messages <= 0:
             return ""
@@ -339,7 +333,7 @@ class ConversationMemory:
 
     def _extract_query_terms(self, text: str) -> List[str]:
         """
-        提取检索关键词 / Extract query terms
+        提取检索关键词
         """
         if not text:
             return []
@@ -363,7 +357,7 @@ class ConversationMemory:
 
     def _chunk_text(self, text: str, max_chars: int) -> List[str]:
         """
-        将文本按段落分块 / Chunk text by paragraphs
+        将文本按段落分块
         """
         if not text:
             return []
@@ -404,7 +398,7 @@ class ConversationMemory:
 
     def _score_chunk(self, chunk: str, terms: List[str]) -> int:
         """
-        计算分块相关性得分 / Score chunk relevance
+        计算分块相关性得分
         """
         if not chunk or not terms:
             return 0
@@ -417,7 +411,7 @@ class ConversationMemory:
 
     def _select_relevant_chunks(self, content: str, query_text: str) -> List[str]:
         """
-        基于检索关键词选择相关分块 / Select relevant chunks by query terms
+        基于检索关键词选择相关分块
         """
         chunks = self._chunk_text(content, self.file_context_chunk_size)
         if not chunks:
@@ -443,13 +437,13 @@ class ConversationMemory:
         max_tokens: Optional[int]
     ) -> Optional[str]:
         """
-        构建单文件上下文块 / Build single file context block
+        构建单文件上下文块
         """
         lines = [f"### `{file_ctx.path}`"]
         if file_ctx.abstract:
             lines.append(f"**摘要**: {file_ctx.abstract}")
         else:
-            lines.append("**摘要**: （无摘要 / no abstract）")
+            lines.append("**摘要**: （无摘要）")
 
         minimal_tokens = estimate_tokens("\n".join(lines + ["-" * 40]))
         if max_tokens is not None and minimal_tokens > max_tokens:
@@ -473,18 +467,18 @@ class ConversationMemory:
         max_tokens: Optional[int] = None
     ) -> Optional[Dict[str, str]]:
         """
-        构建包含文件内容的上下文消息 / Build message containing file contents
-        
+        构建包含文件内容的上下文消息
+
         Returns:
-            Optional[Dict]: 文件上下文消息 / File context message, or None if no files
+            Optional[Dict]: 文件上下文消息，若无文件则返回 None
         """
         if not self.files:
             return None
 
         file_contents = [
-            "## 📁 当前文件上下文 / Current File Context\n",
-            f"共有 {len(self.files)} 个文件 / {len(self.files)} files in context",
-            "内容按相关性分块注入 / Content is chunked by relevance",
+            "## 当前文件上下文\n",
+            f"共有 {len(self.files)} 个文件",
+            "内容按相关性分块注入",
             ""
         ]
 
@@ -510,25 +504,12 @@ class ConversationMemory:
 
         return {"role": "system", "content": "\n".join(file_contents)}
     
-    def get_recent_messages(self, n: int) -> List[Message]:
-        """
-        获取最近n条消息 / Get recent n messages
-        
-        Args:
-            n: 消息数量 / Number of messages
-            
-        Returns:
-            List[Message]: 消息列表 / List of messages
-        """
-        messages = self.get_messages()
-        return messages[-n:] if len(messages) > n else messages
-    
     def clear(self, keep_system: bool = True) -> None:
         """
-        清空对话历史 / Clear conversation history
-        
+        清空对话历史
+
         Args:
-            keep_system: 是否保留系统消息 / Whether to keep system message
+            keep_system: 是否保留系统消息
         """
         self.messages = []
         self.summary = ""
@@ -537,39 +518,18 @@ class ConversationMemory:
     
     def get_context_length(self) -> int:
         """
-        获取当前上下文长度（字符数）/ Get current context length (character count)
-        
+        获取当前上下文长度（字符数）
+
         Returns:
-            int: 字符数 / Character count
+            int: 字符数
         """
         total = 0
         for msg in self.get_messages():
             total += len(msg.content)
         return total
     
-    def summarize(self) -> str:
-        """
-        生成对话摘要 / Generate conversation summary
-        
-        Returns:
-            str: 对话摘要 / Conversation summary
-        """
-        if not self.messages:
-            return "无对话历史 / No conversation history"
-        
-        summary_parts = []
-        for msg in self.messages[-5:]:  # 最近5条消息 / Last 5 messages
-            role_name = {
-                "user": "用户/User",
-                "assistant": "助手/Assistant",
-                "tool": "工具/Tool"
-            }.get(msg.role, msg.role)
-            summary_parts.append(f"[{role_name}]: {msg.content[:100]}...")
-        
-        return "\n".join(summary_parts)
-    
     # ==============================================================================
-    # 文件上下文管理方法 / File Context Management Methods
+    # 文件上下文管理方法
     # ==============================================================================
     
     def add_file(
@@ -580,16 +540,16 @@ class ConversationMemory:
         metadata: Optional[Dict[str, Any]] = None
     ) -> FileContext:
         """
-        添加文件到上下文 / Add file to context
-        
+        添加文件到上下文
+
         Args:
-            path: 文件路径 / File path
-            content: 文件内容（可选）/ File content (optional)
-            abstract: 文件摘要 / File abstract
-            metadata: 额外元数据 / Extra metadata
-            
+            path: 文件路径
+            content: 文件内容（可选）
+            abstract: 文件摘要
+            metadata: 额外元数据
+
         Returns:
-            FileContext: 添加的文件上下文 / Added file context
+            FileContext: 添加的文件上下文
         """
         file_ctx = FileContext(
             path=path,
@@ -608,16 +568,16 @@ class ConversationMemory:
         metadata: Optional[Dict[str, Any]] = None
     ) -> Optional[FileContext]:
         """
-        更新文件上下文 / Update file context
-        
+        更新文件上下文
+
         Args:
-            path: 文件路径 / File path
-            content: 新的文件内容 / New file content
-            abstract: 新的文件摘要 / New file abstract
-            metadata: 新的元数据 / New metadata
-            
+            path: 文件路径
+            content: 新的文件内容
+            abstract: 新的文件摘要
+            metadata: 新的元数据
+
         Returns:
-            FileContext: 更新后的文件上下文，如果文件不存在则返回None / Updated file context, None if not exists
+            FileContext: 更新后的文件上下文，如果文件不存在则返回 None
         """
         if path not in self.files:
             return None
@@ -635,13 +595,13 @@ class ConversationMemory:
     
     def remove_file(self, path: str) -> bool:
         """
-        移除文件上下文 / Remove file context
-        
+        移除文件上下文
+
         Args:
-            path: 文件路径 / File path
-            
+            path: 文件路径
+
         Returns:
-            bool: 是否成功移除 / Whether removal was successful
+            bool: 是否成功移除
         """
         if path in self.files:
             del self.files[path]
@@ -650,77 +610,73 @@ class ConversationMemory:
     
     def get_file(self, path: str) -> Optional[FileContext]:
         """
-        获取文件上下文 / Get file context
-        
+        获取文件上下文
+
         Args:
-            path: 文件路径 / File path
-            
+            path: 文件路径
+
         Returns:
-            FileContext: 文件上下文，如果不存在则返回None / File context, None if not exists
+            FileContext: 文件上下文，如果不存在则返回 None
         """
         return self.files.get(path)
     
     def list_files(self) -> List[FileContext]:
         """
-        列出所有文件上下文 / List all file contexts
-        
+        列出所有文件上下文
+
         Returns:
-            List[FileContext]: 文件上下文列表 / List of file contexts
+            List[FileContext]: 文件上下文列表
         """
         return list(self.files.values())
     
     def get_files_summary(self) -> str:
         """
-        获取文件上下文摘要 / Get files summary
-        
+        获取文件上下文摘要
+
         Returns:
-            str: 文件摘要字符串 / Files summary string
+            str: 文件摘要字符串
         """
         if not self.files:
-            return "当前无文件 / No files currently"
+            return "当前无文件"
         
-        summary_lines = [f"当前文件数量 / Current files: {len(self.files)}"]
+        summary_lines = [f"当前文件数量: {len(self.files)}"]
         for file_ctx in self.files.values():
             summary_lines.append(f"  - {file_ctx.get_summary()}")
         
         return "\n".join(summary_lines)
     
-    def clear_files(self) -> None:
-        """清空所有文件上下文 / Clear all file contexts"""
-        self.files.clear()
-    
     # ==============================================================================
-    # 工作记忆摘要方法 / Working Memory Summary Methods
+    # 工作记忆摘要方法
     # ==============================================================================
     
     def get_context_summary(self, last_n: int = 10) -> str:
         """
-        生成最近操作的摘要 / Generate summary of recent operations
-        
+        生成最近操作的摘要
+
         Args:
-            last_n: 分析最近N条消息 / Analyze last N messages
-            
+            last_n: 分析最近N条消息
+
         Returns:
-            str: 上下文摘要 / Context summary
+            str: 上下文摘要
         """
         if not self.messages:
-            return "暂无操作历史 / No operation history"
+            return "暂无操作历史"
         
         summary_lines = []
         
-        # 1. 工具使用统计 / Tool usage statistics
+        # 1. 工具使用统计
         tool_counts = {}
         for msg in self.messages[-last_n:]:
             if msg.role == "tool":
-                tool_name = msg.metadata.get("tool_name", "unknown")
+                tool_name = msg.metadata.get("tool_name", "未知")
                 tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
         
         if tool_counts:
-            summary_lines.append("📊 已使用工具统计 / Tools used:")
+            summary_lines.append("已使用工具统计：")
             for tool, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True):
                 summary_lines.append(f"   • {tool}: {count}次")
         
-        # 2. 最新工具结果 / Latest tool results
+        # 2. 最新工具结果
         latest_tool_msg = None
         for msg in reversed(self.messages):
             if msg.role == "tool":
@@ -728,16 +684,16 @@ class ConversationMemory:
                 break
         
         if latest_tool_msg:
-            tool_name = latest_tool_msg.metadata.get("tool_name", "unknown")
+            tool_name = latest_tool_msg.metadata.get("tool_name", "未知")
             preview = latest_tool_msg.content[:150]
             if len(latest_tool_msg.content) > 150:
                 preview += "..."
-            summary_lines.append(f"\n🔍 最新工具结果 / Latest tool result ({tool_name}):")
+            summary_lines.append(f"\n最新工具结果（{tool_name}）：")
             summary_lines.append(f"   {preview}")
         
-        # 3. 当前文件上下文 / Current file context
+        # 3. 当前文件上下文
         if self.files:
-            summary_lines.append(f"\n📁 当前文件数 / Files in context: {len(self.files)}")
+            summary_lines.append(f"\n当前文件数: {len(self.files)}")
         
         return "\n".join(summary_lines)
 
@@ -790,16 +746,16 @@ class ConversationMemory:
         return "..." + summary[-self.summary_max_chars:]
 
 
-# 全局记忆实例 / Global memory instance
+# 全局记忆实例
 _memory: Optional[ConversationMemory] = None
 
 
 def get_memory() -> ConversationMemory:
     """
-    获取全局记忆实例 / Get global memory instance
-    
+    获取全局记忆实例
+
     Returns:
-        ConversationMemory: 记忆实例 / Memory instance
+        ConversationMemory: 记忆实例
     """
     global _memory
     if _memory is None:
@@ -809,10 +765,10 @@ def get_memory() -> ConversationMemory:
 
 def reset_memory() -> ConversationMemory:
     """
-    重置全局记忆 / Reset global memory
-    
+    重置全局记忆
+
     Returns:
-        ConversationMemory: 新的记忆实例 / New memory instance
+        ConversationMemory: 新的记忆实例
     """
     global _memory
     _memory = ConversationMemory()

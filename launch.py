@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# GAIA Benchmark 测试启动器 / GAIA Benchmark Test Launcher
+# GAIA Benchmark 测试启动器
 # ==============================================================================
-# 使用方法 / Usage:
+# 使用方法
 #   python launch.py                      # 处理默认行（第1行）
 #   python launch.py --row 5              # 处理第5行
 #   python launch.py --row 1-10           # 处理第1到10行
@@ -22,38 +22,36 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-# 修复 Windows 编码问题 / Fix Windows encoding issues
+# 修复 Windows 编码问题
 if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# 添加项目根目录到路径 / Add project root to path
+# 添加项目根目录到路径
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from src import (
     BaseAgent,
-    get_config,
     init_logging,
     get_logger,
-    DocumentConverter,
     preprocess_files,
 )
 
 
 # ==============================================================================
-# 常量定义 / Constants
+# 常量定义
 # ==============================================================================
 
-# 默认数据集路径 / Default dataset path
+# 默认数据集路径
 DEFAULT_DATASET_PATH = "dataset/data/train-00000-of-00001.parquet"
 
-# 输出目录 / Output directory
+# 输出目录
 OUTPUT_DIR = "outputs"
 
 
 # ==============================================================================
-# 辅助函数 / Helper Functions
+# 辅助函数
 # ==============================================================================
 
 def load_dataset(dataset_path: str) -> Optional[Any]:
@@ -73,7 +71,7 @@ def load_dataset(dataset_path: str) -> Optional[Any]:
             print(f"❌ 数据集文件不存在 / Dataset file not found: {dataset_path}")
             return None
         
-        # 根据文件类型选择读取方式 / Choose reading method by file type
+        # 根据文件类型选择读取方式
         ext = Path(dataset_path).suffix.lower()
         
         if ext == '.parquet':
@@ -123,7 +121,7 @@ def parse_row_indices(row_spec: str, max_rows: int) -> List[int]:
         part = part.strip()
         
         if '-' in part:
-            # 范围 / Range
+            # 范围
             try:
                 start, end = map(int, part.split('-'))
                 start = max(0, start)
@@ -132,7 +130,7 @@ def parse_row_indices(row_spec: str, max_rows: int) -> List[int]:
             except ValueError:
                 print(f"⚠️  无效的范围格式 / Invalid range format: {part}")
         else:
-            # 单个数字 / Single number
+            # 单个数字
             try:
                 idx = int(part)
                 if 0 <= idx < max_rows:
@@ -142,7 +140,7 @@ def parse_row_indices(row_spec: str, max_rows: int) -> List[int]:
             except ValueError:
                 print(f"⚠️  无效的行号 / Invalid row number: {part}")
     
-    # 去重并排序 / Deduplicate and sort
+    # 去重并排序
     return sorted(set(indices))
 
 
@@ -156,22 +154,22 @@ def extract_task_info(row: Any) -> Tuple[str, str, List[str]]:
     Returns:
         Tuple[str, str, List[str]]: (task_id, prompt, reference_files)
     """
-    # 获取任务ID / Get task ID
+    # 获取任务ID
     task_id = str(row.get('task_id', row.name if hasattr(row, 'name') else 'unknown'))
     
-    # 获取提示词 / Get prompt
+    # 获取提示词
     prompt = str(row.get('prompt', row.get('question', row.get('input', ''))))
     
-    # 获取参考文件 / Get reference files
+    # 获取参考文件
     ref_files_raw = row.get('reference_files', row.get('files', row.get('attachments', [])))
     
-    # 处理参考文件路径 / Process reference file paths
+    # 处理参考文件路径
     reference_files = []
     if isinstance(ref_files_raw, (list, tuple)):
         for file in ref_files_raw:
-            if file:  # 过滤空值 / Filter empty values
+            if file:  # 过滤空值
                 file_path = str(file)
-                # 添加 dataset/ 前缀（如果不是绝对路径）/ Add dataset/ prefix if not absolute
+                # 添加 dataset/ 前缀（如果不是绝对路径）
                 if not os.path.isabs(file_path) and not file_path.startswith('dataset/'):
                     file_path = f"dataset/{file_path}"
                 reference_files.append(file_path)
@@ -202,11 +200,11 @@ def save_result(
     Returns:
         str: 输出目录路径 / Output directory path
     """
-    # 创建输出目录 / Create output directory
+    # 创建输出目录
     output_dir = Path(OUTPUT_DIR) / task_id
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 构建结果数据 / Build result data
+    # 构建结果数据
     result = {
         "task_id": task_id,
         "timestamp": datetime.now().isoformat(),
@@ -218,7 +216,7 @@ def save_result(
         "error_message": response.error_message if hasattr(response, 'error_message') else None,
     }
     
-    # 添加预处理文件信息 / Add preprocessed file info
+    # 添加预处理文件信息
     if processed_files:
         result["processed_files"] = {
             "file_count": processed_files.get("file_count", 0),
@@ -226,12 +224,12 @@ def save_result(
             "files": processed_files.get("files", []),
         }
     
-    # 保存结果JSON / Save result JSON
+    # 保存结果JSON
     result_path = output_dir / "result.json"
     with open(result_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
     
-    # 保存最终答案到文本文件 / Save final answer to text file
+    # 保存最终答案到文本文件
     answer_path = output_dir / "answer.txt"
     with open(answer_path, 'w', encoding='utf-8') as f:
         f.write(result["final_answer"])
@@ -289,7 +287,7 @@ def _move_top_level_files_to_output(
             
             
 # ==============================================================================
-# 主处理函数 / Main Processing Functions
+# 主处理函数
 # ==============================================================================
 
 def process_task(
@@ -316,14 +314,14 @@ def process_task(
     print(f"📋 任务 / Task: {task_id}")
     print(f"{'=' * 60}")
     
-    # 预处理文件 / Preprocess files
+    # 预处理文件
     processed_files = None
     enhanced_prompt = prompt
     
     if reference_files:
         print(f"📁 发现 {len(reference_files)} 个参考文件 / Found {len(reference_files)} reference files")
         
-        # 检查文件是否存在 / Check if files exist
+        # 检查文件是否存在
         existing_files = []
         for file_path in reference_files:
             if os.path.exists(file_path):
@@ -332,18 +330,18 @@ def process_task(
             else:
                 print(f"   ✗ {file_path} (不存在 / not found)")
         
-        # 处理存在的文件 / Process existing files
+        # 处理存在的文件
         if existing_files:
             try:
                 print(f"\n🔄 正在预处理文件... / Preprocessing files...")
                 processed_files = preprocess_files(task_id, existing_files)
                 
-                # 增强提示词 / Enhance prompt
+                # 增强提示词
                 file_content = processed_files.get("content", "")
                 if file_content:
                     enhanced_prompt = f"""{prompt}
 
-## 参考文件内容 / Reference File Content
+## 参考文件内容
 
 {file_content}
 """
@@ -354,17 +352,17 @@ def process_task(
                 logger.error(f"文件预处理失败 / File preprocessing failed: {e}")
                 print(f"⚠️  文件预处理失败 / File preprocessing failed: {e}")
     
-    # 显示提示词 / Display prompt
+    # 显示提示词
     print(f"\n📝 提示词 / Prompt:")
     print(f"   {prompt[:200]}..." if len(prompt) > 200 else f"   {prompt}")
     
-    # 运行Agent / Run Agent
+    # 运行智能体
     print(f"\n🤖 Agent开始处理... / Agent processing...")
     
     try:
         response = agent.run(enhanced_prompt)
         
-        # 显示结果 / Display result
+        # 显示结果
         print(f"\n{'=' * 60}")
         print("📊 处理结果 / Result:")
         print(f"{'=' * 60}")
@@ -374,7 +372,7 @@ def process_task(
         print(f"\n💬 最终答案 / Final Answer:")
         print(f"   {response.final_answer[:500]}..." if len(response.final_answer) > 500 else f"   {response.final_answer}")
         
-        # 保存结果 / Save result
+        # 保存结果
         save_result(task_id, prompt, response, processed_files)
         
         return response
@@ -413,28 +411,27 @@ def list_dataset(df: Any, start: int = 0, count: int = 10) -> None:
 
 
 # ==============================================================================
-# 主函数 / Main Function
+# 主函数
 # ==============================================================================
 
 def main():
     """
-    主函数 / Main function
+    主函数
     """
-    # 解析命令行参数 / Parse command line arguments
+    # 解析命令行参数
     parser = argparse.ArgumentParser(
-        description="GAIA Benchmark 测试启动器 / GAIA Benchmark Test Launcher",
+        description="GAIA Benchmark 测试启动器",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例 / Examples:
-  python launch.py                      # 处理第0行 / Process row 0
-  python launch.py --row 5              # 处理第5行 / Process row 5
-  python launch.py --row 1-10           # 处理第1到10行 / Process rows 1-10
-  python launch.py --row 1,3,5          # 处理指定行 / Process specified rows
-  python launch.py --list               # 列出数据集 / List dataset
-  python launch.py --list --start 10    # 从第10行开始列出 / List from row 10
+示例：
+  python launch.py                      # 处理第0行
+  python launch.py --row 5              # 处理第5行
+  python launch.py --row 1-10           # 处理第1到10行
+  python launch.py --row 1,3,5          # 处理指定行
+  python launch.py --list               # 列出数据集
+  python launch.py --list --start 10    # 从第10行开始列出
 
 更多信息请参阅 GAIA_Benchmark_Preparation_Guide.md
-For more information, see GAIA_Benchmark_Preparation_Guide.md
         """
     )
     
@@ -442,40 +439,40 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
         "-r", "--row",
         type=str,
         default="0",
-        help="要处理的行号（支持范围和列表）/ Row to process (supports range and list)"
+        help="要处理的行号（支持范围和列表）"
     )
     
     parser.add_argument(
         "-d", "--dataset",
         type=str,
         default=DEFAULT_DATASET_PATH,
-        help="数据集路径 / Dataset path"
+        help="数据集路径"
     )
     
     parser.add_argument(
         "-l", "--list",
         action="store_true",
-        help="列出数据集内容 / List dataset content"
+        help="列出数据集内容"
     )
     
     parser.add_argument(
         "-s", "--start",
         type=int,
         default=0,
-        help="列表起始行（与--list一起使用）/ List start row (use with --list)"
+        help="列表起始行（与--list一起使用）"
     )
     
     parser.add_argument(
         "-n", "--count",
         type=int,
         default=10,
-        help="列表显示数量（与--list一起使用）/ List display count (use with --list)"
+        help="列表显示数量（与--list一起使用）"
     )
     
     parser.add_argument(
         "-v", "--verbose",
         action="store_true",
-        help="启用详细输出 / Enable verbose output"
+        help="启用详细输出"
     )
     
     parser.add_argument(
@@ -486,11 +483,11 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
     
     args = parser.parse_args()
     
-    # 初始化日志 / Initialize logging
+    # 初始化日志
     init_logging()
     logger = get_logger("launch")
     
-    # 加载数据集 / Load dataset
+    # 加载数据集
     print(f"\n📂 加载数据集 / Loading dataset: {args.dataset}")
     df = load_dataset(args.dataset)
     
@@ -499,12 +496,12 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
     
     print(f"   ✓ 加载成功 / Loaded successfully: {len(df)} 行 / rows")
     
-    # 列表模式 / List mode
+    # 列表模式
     if args.list:
         list_dataset(df, args.start, args.count)
         return
     
-    # 解析行索引 / Parse row indices
+    # 解析行索引
     row_indices = parse_row_indices(args.row, len(df))
     
     if not row_indices:
@@ -514,7 +511,7 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
     print(f"📌 将处理 {len(row_indices)} 个任务 / Will process {len(row_indices)} tasks")
     print(f"   行号 / Rows: {row_indices}")
     
-    # 创建Agent / Create Agent
+    # 创建智能体
     print(f"\n🤖 初始化Agent / Initializing Agent...")
     
     try:
@@ -524,7 +521,7 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
         print(f"❌ Agent初始化失败 / Agent initialization failed: {e}")
         sys.exit(1)
     
-    # 处理任务 / Process tasks
+    # 处理任务
     results = []
     
     for idx in row_indices:
@@ -556,7 +553,7 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
                 print(f"\n📦 发现 {len(root_new_files)} 个新文件在根目录，将移动到 outputs/{task_id}...")
                 _move_top_level_files_to_output(project_root, root_new_files, task_id, project_root, "")
 
-            # 重置Agent状态 / Reset Agent state
+            # 重置智能体状态
             agent.reset()
 
         except Exception as e:
@@ -568,7 +565,7 @@ For more information, see GAIA_Benchmark_Preparation_Guide.md
                 "error": str(e),
             })
     
-    # 显示汇总 / Display summary
+    # 显示汇总
     print(f"\n{'=' * 60}")
     print("📊 处理汇总 / Processing Summary")
     print(f"{'=' * 60}")

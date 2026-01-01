@@ -1,35 +1,34 @@
 # ==============================================================================
-# 数据模式定义模块 / Data Schema Definition Module
+# 数据模式定义模块
 # ==============================================================================
 # 定义Agent使用的各种数据结构
-# Defines various data structures used by the Agent
 # ==============================================================================
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 
 class AgentState(Enum):
     """
     Agent状态枚举 / Agent State Enumeration
     """
-    IDLE = "idle"  # 空闲 / Idle
-    THINKING = "thinking"  # 思考中 / Thinking
-    EXECUTING = "executing"  # 执行工具中 / Executing tool
-    COMPLETED = "completed"  # 完成 / Completed
-    ERROR = "error"  # 错误 / Error
-    STOPPED = "stopped"  # 已停止 / Stopped
+    IDLE = "idle"  # 空闲
+    THINKING = "thinking"  # 思考中
+    EXECUTING = "executing"  # 执行工具中
+    COMPLETED = "completed"  # 完成
+    ERROR = "error"  # 错误
+    STOPPED = "stopped"  # 已停止
 
 
 class ToolResultStatus(Enum):
     """
     工具执行结果状态 / Tool Execution Result Status
     """
-    SUCCESS = "success"  # 成功 / Success
-    ERROR = "error"  # 错误 / Error
-    TIMEOUT = "timeout"  # 超时 / Timeout
+    SUCCESS = "success"  # 成功
+    ERROR = "error"  # 错误
+    TIMEOUT = "timeout"  # 超时
 
 
 @dataclass
@@ -40,10 +39,10 @@ class ToolCall:
     记录单次工具调用的详细信息
     Records details of a single tool call
     """
-    tool_name: str  # 工具名称 / Tool name
-    arguments: Dict[str, Any]  # 调用参数 / Call arguments
+    tool_name: str  # 工具名称
+    arguments: Dict[str, Any]  # 调用参数
     timestamp: datetime = field(default_factory=datetime.now)
-    call_id: Optional[str] = None  # 调用ID / Call ID
+    call_id: Optional[str] = None  # 调用ID
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典 / Convert to dictionary"""
@@ -63,10 +62,10 @@ class ToolResult:
     记录工具执行的结果
     Records the result of tool execution
     """
-    tool_name: str  # 工具名称 / Tool name
-    status: ToolResultStatus  # 状态 / Status
-    output: Any  # 输出结果 / Output result
-    error_message: Optional[str] = None  # 错误信息 / Error message
+    tool_name: str  # 工具名称
+    status: ToolResultStatus  # 状态
+    output: Any  # 输出结果
+    error_message: Optional[str] = None  # 错误信息
     execution_time: float = 0.0  # 执行时间（秒）/ Execution time (seconds)
     timestamp: datetime = field(default_factory=datetime.now)
     
@@ -95,11 +94,11 @@ class AgentStep:
     记录Agent单次迭代的完整信息
     Records complete information of a single Agent iteration
     """
-    step_number: int  # 步骤编号 / Step number
+    step_number: int  # 步骤编号
     thinking: str = ""  # 思考内容（Extended Thinking）/ Thinking content
-    tool_calls: List[ToolCall] = field(default_factory=list)  # 工具调用列表 / Tool calls
-    tool_results: List[ToolResult] = field(default_factory=list)  # 工具结果列表 / Tool results
-    response: Optional[str] = None  # 最终响应 / Final response
+    tool_calls: List[ToolCall] = field(default_factory=list)  # 工具调用列表
+    tool_results: List[ToolResult] = field(default_factory=list)  # 工具结果列表
+    response: Optional[str] = None  # 最终响应
     timestamp: datetime = field(default_factory=datetime.now)
     
     def to_dict(self) -> Dict[str, Any]:
@@ -122,13 +121,13 @@ class AgentResponse:
     包含Agent完整执行结果
     Contains complete Agent execution result
     """
-    success: bool  # 是否成功 / Is successful
-    final_answer: str  # 最终答案 / Final answer
-    steps: List[AgentStep] = field(default_factory=list)  # 执行步骤 / Execution steps
-    total_iterations: int = 0  # 总迭代次数 / Total iterations
-    total_tokens_used: int = 0  # 使用的token总数 / Total tokens used
+    success: bool  # 是否成功
+    final_answer: str  # 最终答案
+    steps: List[AgentStep] = field(default_factory=list)  # 执行步骤
+    total_iterations: int = 0  # 总迭代次数
+    total_tokens_used: int = 0  # 使用的token总数
     execution_time: float = 0.0  # 总执行时间（秒）/ Total execution time (seconds)
-    error_message: Optional[str] = None  # 错误信息 / Error message
+    error_message: Optional[str] = None  # 错误信息
     
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典 / Convert to dictionary"""
@@ -140,27 +139,4 @@ class AgentResponse:
             "total_tokens_used": self.total_tokens_used,
             "execution_time": self.execution_time,
             "error_message": self.error_message
-        }
-
-
-@dataclass
-class UserInput:
-    """
-    用户输入 / User Input
-    
-    封装用户输入信息
-    Encapsulates user input information
-    """
-    content: str  # 输入内容 / Input content
-    context: Optional[Dict[str, Any]] = None  # 附加上下文 / Additional context
-    attachments: List[str] = field(default_factory=list)  # 附件路径 / Attachment paths
-    timestamp: datetime = field(default_factory=datetime.now)
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """转换为字典 / Convert to dictionary"""
-        return {
-            "content": self.content,
-            "context": self.context,
-            "attachments": self.attachments,
-            "timestamp": self.timestamp.isoformat()
         }

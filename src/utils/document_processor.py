@@ -1,26 +1,23 @@
 # ==============================================================================
-# 文档处理器模块 / Document Processor Module
+# 文档处理器模块
 # ==============================================================================
 # 提供多种文档格式的解析和转换功能
-# Provides parsing and conversion for various document formats
 #
-# 支持格式 / Supported Formats:
-# - PDF: 文本提取和图片提取 / Text and image extraction
-# - Word (.docx/.doc): 文本和图片提取 / Text and image extraction
-# - PowerPoint (.pptx): 幻灯片内容提取 / Slide content extraction
-# - Excel (.xlsx/.xls): 表格数据读取 / Spreadsheet data reading
-# - 图片 (png/jpg/gif等): Base64编码和描述 / Base64 encoding and description
-# - 纯文本 (txt/md): 直接读取 / Direct reading
+# 支持格式
+# - PDF: 文本提取和图片提取
+# - Word (.docx/.doc): 文本和图片提取
+# - PowerPoint (.pptx): 幻灯片内容提取
+# - Excel (.xlsx/.xls): 表格数据读取
+# - 图片 (png/jpg/gif等): Base64编码和描述
+# - 纯文本 (txt/md): 直接读取
 #
 # 基于 GAIA Benchmark 需求设计
-# Designed based on GAIA Benchmark requirements
 # ==============================================================================
 
 import base64
 import csv
 import os
 import shutil
-from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -30,7 +27,7 @@ from src.utils.encoding import decode_output_bytes
 
 logger = get_logger("utils.document_processor")
 
-# 尝试导入可选依赖 / Try importing optional dependencies
+# 尝试导入可选依赖
 try:
     from PIL import Image
     PIL_AVAILABLE = True
@@ -68,7 +65,7 @@ try:
 except ImportError:
     PANDAS_AVAILABLE = False
 
-# pywin32 用于Windows下读取老式.doc文件 / pywin32 for reading legacy .doc files on Windows
+# pywin32 用于Windows下读取老式.doc文件
 try:
     import win32com.client
     import pythoncom
@@ -76,20 +73,20 @@ try:
 except ImportError:
     PYWIN32_AVAILABLE = False
 
-# olefile 用于跨平台读取老式.doc文件 / olefile for cross-platform reading of legacy .doc files
+# olefile 用于跨平台读取老式.doc文件
 try:
     import olefile
     OLEFILE_AVAILABLE = True
 except ImportError:
     OLEFILE_AVAILABLE = False
 
-# subprocess 用于调用外部工具 / subprocess for calling external tools
+# subprocess 用于调用外部工具
 import subprocess
 import platform
 
 
 # ==============================================================================
-# 辅助函数 / Helper Functions
+# 辅助函数
 # ==============================================================================
 
 def encode_image_to_base64(image_path: str) -> str:
@@ -152,7 +149,6 @@ def check_dependencies(file_ext: str) -> Optional[str]:
             return "python-docx"
     elif ext == 'doc':
         # .doc文件需要pywin32(Windows)或olefile(跨平台)
-        # .doc files need pywin32 (Windows) or olefile (cross-platform)
         if not PYWIN32_AVAILABLE and not OLEFILE_AVAILABLE:
             if platform.system() == 'Windows':
                 return "pywin32"
@@ -163,7 +159,6 @@ def check_dependencies(file_ext: str) -> Optional[str]:
             return "python-pptx"
     elif ext in ['ppt']:
         # 老式.ppt文件需要pywin32
-        # Legacy .ppt files need pywin32
         if not PYWIN32_AVAILABLE:
             if platform.system() == 'Windows':
                 return "pywin32"
@@ -180,7 +175,7 @@ def check_dependencies(file_ext: str) -> Optional[str]:
 
 
 # ==============================================================================
-# 文档转换器类 / Document Converter Class
+# 文档转换器类
 # ==============================================================================
 
 class DocumentConverter:
@@ -193,10 +188,9 @@ class DocumentConverter:
     使用方法 / Usage:
         converter = DocumentConverter(task_id="task_001", output_dir="./temp")
         result = converter.convert("document.pdf")
-        # result = {"content": "...", "output_path": "...", "images": [...]}
     """
     
-    # 支持的文件扩展名 / Supported file extensions
+    # 支持的文件扩展名
     SUPPORTED_EXTENSIONS = {
         'document': ['.pdf', '.docx', '.doc', '.pptx', '.ppt', '.txt', '.md'],
         'image': ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.svg'],
@@ -221,7 +215,7 @@ class DocumentConverter:
         """
         self.task_id = task_id
         
-        # 设置输出目录 / Set output directory
+        # 设置输出目录
         if output_dir:
             self.output_dir = Path(output_dir) / task_id / "input"
         else:
@@ -229,23 +223,23 @@ class DocumentConverter:
         
         self.output_dir.mkdir(parents=True, exist_ok=True)
         
-        # 图片CSV路径 / Image CSV path
+        # 图片CSV路径
         self.image_csv_path = self.output_dir / "images.csv"
         
-        # 图片计数器 / Image counter
+        # 图片计数器
         self.image_counter = 1
         
-        # 图片描述函数 / Image description function
+        # 图片描述函数
         self.image_description_func = image_description_func
         
-        # 初始化图片CSV / Initialize image CSV
+        # 初始化图片CSV
         self._init_image_csv()
         
         logger.info(f"文档转换器初始化 / Document converter initialized: {self.output_dir}")
     
     def _init_image_csv(self) -> None:
         """初始化图片信息CSV文件 / Initialize image info CSV file"""
-        # 如果文件已存在，删除重建 / Delete and recreate if exists
+        # 如果文件已存在，删除重建
         if self.image_csv_path.exists():
             self.image_csv_path.unlink()
         
@@ -291,7 +285,7 @@ class DocumentConverter:
             Tuple[str, str]: (Base64字符串, 尺寸字符串) / (Base64 string, size string)
         """
         if not PIL_AVAILABLE:
-            # 没有PIL时，直接编码原始数据 / Encode raw data without PIL
+            # 没有PIL时，直接编码原始数据
             return base64.b64encode(image_data).decode('utf-8'), "unknown"
         
         try:
@@ -300,16 +294,16 @@ class DocumentConverter:
             img.save(buffered, format="PNG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8'), f"{img.size[0]}x{img.size[1]}"
         except Exception as e:
-            # 处理损坏或无法识别的图片 / Handle corrupted or unrecognizable images
+            # 处理损坏或无法识别的图片
             logger.warning(f"无法处理图片，使用占位符 / Cannot process image, using placeholder: {e}")
-            # 创建占位图片 / Create placeholder image
+            # 创建占位图片
             placeholder = Image.new('RGB', (100, 100), color='gray')
             buffered = BytesIO()
             placeholder.save(buffered, format="PNG")
             return base64.b64encode(buffered.getvalue()).decode('utf-8'), "100x100"
     
     # ==========================================================================
-    # 各类型文件转换方法 / Conversion Methods for Each Type
+    # 各类型文件转换方法
     # ==========================================================================
     
     def convert_pdf(self, file_path: str) -> str:
@@ -331,23 +325,23 @@ class DocumentConverter:
         md_content = []
         file_name = Path(file_path).stem
         
-        # 使用pdfplumber提取文字 / Extract text with pdfplumber
+        # 使用pdfplumber提取文字
         with pdfplumber.open(file_path) as pdf:
             for page_num, page in enumerate(pdf.pages, 1):
                 text = page.extract_text()
                 if text:
                     md_content.append(f"--- Page {page_num} ---\n{text}")
                 
-                # 提取表格 / Extract tables
+                # 提取表格
                 tables = page.extract_tables()
                 for table_idx, table in enumerate(tables, 1):
                     if table:
                         md_content.append(f"\n[表格 {page_num}-{table_idx}]\n")
-                        # 简单的表格转文本 / Simple table to text
+                        # 简单的表格转文本
                         for row in table:
                             md_content.append(" | ".join(str(cell or '') for cell in row))
         
-        # 使用PyMuPDF提取图片（如果可用）/ Extract images with PyMuPDF if available
+        # 使用PyMuPDF提取图片（如果可用）
         if FITZ_AVAILABLE:
             try:
                 doc = fitz.open(file_path)
@@ -397,19 +391,19 @@ class DocumentConverter:
         file_name = Path(file_path).stem
         md_content = []
         
-        # 提取段落文本 / Extract paragraph text
+        # 提取段落文本
         for para in doc.paragraphs:
             if para.text.strip():
                 md_content.append(para.text)
         
-        # 提取表格 / Extract tables
+        # 提取表格
         for table_idx, table in enumerate(doc.tables, 1):
             md_content.append(f"\n[表格 {table_idx}]")
             for row in table.rows:
                 row_text = " | ".join(cell.text.strip() for cell in row.cells)
                 md_content.append(row_text)
         
-        # 提取图片 / Extract images
+        # 提取图片
         for rel in doc.part.rels.values():
             if "image" in rel.target_ref:
                 try:
@@ -448,7 +442,6 @@ class DocumentConverter:
         md_content = []
         
         # 方法1: 使用 pywin32 (Windows COM接口)
-        # Method 1: Use pywin32 (Windows COM interface)
         if PYWIN32_AVAILABLE and platform.system() == 'Windows':
             try:
                 pythoncom.CoInitialize()
@@ -456,14 +449,14 @@ class DocumentConverter:
                     word = win32com.client.Dispatch("Word.Application")
                     word.Visible = False
                     
-                    # 打开文档 / Open document
+                    # 打开文档
                     doc = word.Documents.Open(os.path.abspath(file_path))
                     
-                    # 提取文本 / Extract text
+                    # 提取文本
                     text = doc.Content.Text
                     md_content.append(text)
                     
-                    # 提取表格 / Extract tables
+                    # 提取表格
                     for table_idx, table in enumerate(doc.Tables, 1):
                         md_content.append(f"\n[表格 {table_idx}]")
                         try:
@@ -488,7 +481,6 @@ class DocumentConverter:
                 logger.warning(f"pywin32转换失败，尝试其他方法 / pywin32 conversion failed, trying other methods: {e}")
         
         # 方法2: 使用 antiword 命令行工具
-        # Method 2: Use antiword CLI tool
         try:
             antiword_cmd = "antiword" if platform.system() != 'Windows' else "antiword.exe"
             result = subprocess.run(
@@ -509,7 +501,6 @@ class DocumentConverter:
             logger.warning(f"antiword转换失败 / antiword conversion failed: {e}")
         
         # 方法3: 使用 catdoc 命令行工具 (常见于Linux)
-        # Method 3: Use catdoc CLI tool (common on Linux)
         try:
             result = subprocess.run(
                 ["catdoc", file_path],
@@ -527,25 +518,22 @@ class DocumentConverter:
             logger.warning(f"catdoc转换失败 / catdoc conversion failed: {e}")
         
         # 方法4: 使用 olefile 进行基本文本提取
-        # Method 4: Use olefile for basic text extraction
         if OLEFILE_AVAILABLE:
             try:
                 ole = olefile.OleFileIO(file_path)
                 
                 # 尝试读取 WordDocument 流
-                # Try to read WordDocument stream
                 if ole.exists('WordDocument'):
-                    # 读取所有文本流 / Read all text streams
+                    # 读取所有文本流
                     text_parts = []
                     
                     # 尝试从多个可能的位置提取文本
-                    # Try to extract text from multiple possible locations
                     for stream_name in ole.listdir():
                         stream_path = '/'.join(stream_name)
                         try:
                             if any(keyword in stream_path.lower() for keyword in ['word', 'text', 'content', 'data']):
                                 data = ole.openstream(stream_name).read()
-                                # 尝试提取可读文本 / Try to extract readable text
+                                # 尝试提取可读文本
                                 text = self._extract_text_from_binary(data)
                                 if text.strip():
                                     text_parts.append(text)
@@ -564,7 +552,6 @@ class DocumentConverter:
                 logger.warning(f"olefile转换失败 / olefile conversion failed: {e}")
         
         # 方法5: 最后尝试直接二进制文本提取
-        # Method 5: Last resort - direct binary text extraction
         try:
             with open(file_path, 'rb') as f:
                 raw_data = f.read()
@@ -593,23 +580,21 @@ class DocumentConverter:
         Returns:
             str: 提取的文本 / Extracted text
         """
-        # 尝试多种编码 / Try multiple encodings
+        # 尝试多种编码
         encodings = ['utf-16-le', 'utf-8', 'cp1252', 'gbk', 'latin-1']
         
         for encoding in encodings:
             try:
                 text = data.decode(encoding, errors='ignore')
                 # 过滤不可打印字符，保留中文和常见字符
-                # Filter non-printable characters, keep Chinese and common characters
                 import re
                 # 保留可打印ASCII、中文、常见标点
-                # Keep printable ASCII, Chinese, common punctuation
                 cleaned = re.sub(r'[^\x20-\x7E\u4e00-\u9fff\u3000-\u303f\uff00-\uffef\n\r\t]', ' ', text)
-                # 压缩多余空格 / Compress extra spaces
+                # 压缩多余空格
                 cleaned = re.sub(r' {3,}', '  ', cleaned)
                 cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
                 
-                # 检查是否有足够的可读内容 / Check if there's enough readable content
+                # 检查是否有足够的可读内容
                 if len(cleaned.strip()) > 50:
                     return cleaned.strip()
             except Exception:
@@ -631,7 +616,6 @@ class DocumentConverter:
         md_content = []
         
         # 方法1: 使用 pywin32 (Windows COM接口)
-        # Method 1: Use pywin32 (Windows COM interface)
         if PYWIN32_AVAILABLE and platform.system() == 'Windows':
             try:
                 pythoncom.CoInitialize()
@@ -639,14 +623,14 @@ class DocumentConverter:
                     ppt = win32com.client.Dispatch("PowerPoint.Application")
                     ppt.Visible = False
                     
-                    # 打开演示文稿 / Open presentation
+                    # 打开演示文稿
                     presentation = ppt.Presentations.Open(os.path.abspath(file_path), WithWindow=False)
                     
-                    # 遍历幻灯片 / Iterate through slides
+                    # 遍历幻灯片
                     for slide_idx, slide in enumerate(presentation.Slides, 1):
                         md_content.append(f"\n--- Slide {slide_idx} ---\n")
                         
-                        # 提取形状中的文本 / Extract text from shapes
+                        # 提取形状中的文本
                         for shape in slide.Shapes:
                             if shape.HasTextFrame:
                                 if shape.TextFrame.HasText:
@@ -667,7 +651,6 @@ class DocumentConverter:
                 logger.warning(f"pywin32转换.ppt失败，尝试其他方法 / pywin32 .ppt conversion failed, trying other methods: {e}")
         
         # 方法2: 使用 olefile 进行基本文本提取
-        # Method 2: Use olefile for basic text extraction
         if OLEFILE_AVAILABLE:
             try:
                 ole = olefile.OleFileIO(file_path)
@@ -721,11 +704,11 @@ class DocumentConverter:
             md_content.append(f"\n--- Slide {slide_num} ---\n")
             
             for shape in slide.shapes:
-                # 提取文本 / Extract text
+                # 提取文本
                 if hasattr(shape, "text") and shape.text:
                     md_content.append(shape.text)
                 
-                # 提取图片 / Extract images
+                # 提取图片
                 if shape.shape_type == 13:  # Picture shape
                     try:
                         img_data = shape.image.blob
@@ -757,11 +740,11 @@ class DocumentConverter:
         if not PANDAS_AVAILABLE:
             raise ImportError("pandas 未安装，请运行: pip install pandas openpyxl")
         
-        # 复制文件到输出目录 / Copy file to output directory
+        # 复制文件到输出目录
         output_path = self.output_dir / Path(file_path).name
         shutil.copy2(file_path, output_path)
         
-        # 读取所有工作表 / Read all sheets
+        # 读取所有工作表
         try:
             xls = pd.ExcelFile(file_path)
             content_parts = []
@@ -774,7 +757,7 @@ class DocumentConverter:
             
             content = "\n\n".join(content_parts)
         except Exception as e:
-            # 尝试CSV格式 / Try CSV format
+            # 尝试CSV格式
             try:
                 df = pd.read_csv(file_path, nrows=10)
                 content = f"CSV文件预览 (前10行):\n{df.to_markdown(index=False)}"
@@ -794,7 +777,7 @@ class DocumentConverter:
         Returns:
             str: 文件内容 / File content
         """
-        # 尝试多种编码 / Try multiple encodings
+        # 尝试多种编码
         encodings = [encoding, 'utf-8', 'gbk', 'gb2312', 'latin-1']
         
         for enc in encodings:
@@ -804,7 +787,7 @@ class DocumentConverter:
             except UnicodeDecodeError:
                 continue
         
-        # 最后尝试二进制读取 / Last resort: binary read
+        # 最后尝试二进制读取
         with open(file_path, 'rb') as f:
             return f.read().decode('utf-8', errors='replace')
     
@@ -836,18 +819,18 @@ class DocumentConverter:
         if not PIL_AVAILABLE:
             raise ImportError("Pillow 未安装，请运行: pip install Pillow")
         
-        # 复制图片到输出目录 / Copy image to output directory
+        # 复制图片到输出目录
         output_path = self.output_dir / Path(file_path).name
         shutil.copy2(file_path, output_path)
         
-        # 获取图片信息 / Get image info
+        # 获取图片信息
         file_name = Path(file_path).stem
         ext = Path(file_path).suffix.lstrip('.')
         
         base64_image = encode_image_to_base64(file_path)
         size = get_image_size(file_path)
         
-        # 生成图片描述 / Generate image description
+        # 生成图片描述
         if self.image_description_func:
             try:
                 description = self.image_description_func(base64_image, ext)
@@ -857,13 +840,13 @@ class DocumentConverter:
         else:
             description = f"图片文件 / Image file: {file_name}.{ext}, 尺寸 / Size: {size[0]}x{size[1]}"
         
-        # 保存图片信息 / Save image info
+        # 保存图片信息
         self._save_image_info(file_name, file_path, base64_image, description, size)
         
         return f"{file_name} 的图片描述: {description}", str(output_path)
     
     # ==========================================================================
-    # 主转换方法 / Main Conversion Methods
+    # 主转换方法
     # ==========================================================================
     
     def convert(self, file_path: str) -> Tuple[str, str]:
@@ -889,12 +872,12 @@ class DocumentConverter:
         file_name = Path(file_path).stem
         ext = Path(file_path).suffix.lower()
         
-        # 检查依赖 / Check dependencies
+        # 检查依赖
         missing_dep = check_dependencies(ext)
         if missing_dep:
             raise ImportError(f"缺少依赖 / Missing dependency: {missing_dep}. 请运行 / Please run: pip install {missing_dep}")
         
-        # 根据扩展名选择转换方法 / Select conversion method by extension
+        # 根据扩展名选择转换方法
         if ext == '.pdf':
             content = self.convert_pdf(file_path)
         elif ext == '.docx':
@@ -916,7 +899,7 @@ class DocumentConverter:
         else:
             raise ValueError(f"不支持的文件类型 / Unsupported file type: {ext}")
         
-        # 保存转换后的Markdown文件 / Save converted Markdown file
+        # 保存转换后的Markdown文件
         output_path = self.output_dir / f"{file_name}.md"
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
@@ -943,17 +926,17 @@ class DocumentConverter:
         output_paths = []
         image_count = 0
         
-        # 图片扩展名列表 / Image extension list
+        # 图片扩展名列表
         image_exts = {'.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff', '.webp', '.svg'}
         
         for file_path in file_list:
             try:
-                # 统计图片数量 / Count images
+                # 统计图片数量
                 ext = Path(file_path).suffix.lower()
                 if ext in image_exts:
                     image_count += 1
                 
-                # 转换文件 / Convert file
+                # 转换文件
                 content, output_path = self.convert(file_path)
                 output_paths.append(output_path)
                 
@@ -965,7 +948,7 @@ class DocumentConverter:
                 logger.error(f"文件处理失败 / File processing failed: {file_path}, 错误 / Error: {e}")
                 contents.append(f"文件 {file_path} 处理失败: {e}")
         
-        # 如果没有图片，删除图片CSV / Delete image CSV if no images
+        # 如果没有图片，删除图片CSV
         if image_count == 0 and self.image_csv_path.exists():
             self.image_csv_path.unlink()
         
@@ -996,7 +979,7 @@ class DocumentConverter:
 
 
 # ==============================================================================
-# 便捷函数 / Convenience Functions
+# 便捷函数
 # ==============================================================================
 
 def preprocess_files(

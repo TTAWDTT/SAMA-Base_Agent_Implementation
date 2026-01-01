@@ -1,20 +1,7 @@
-# ==============================================================================
-# Shell命令执行工具 / Shell Command Execution Tool
-# ==============================================================================
-# 提供系统Shell命令执行功能，支持策略控制
-# Provides system shell command execution with policy control
-#
-# 安全说明 / Security Note:
-# - 通过 config.yaml 中的 shell_tool 配置控制允许策略
-# - 支持三种模式：allow_all（允许所有）、deny_all（拒绝所有）、whitelist（白名单）
-# - Security is controlled via shell_tool config in config.yaml
-# - Supports three modes: allow_all, deny_all, whitelist
-# ==============================================================================
-
 import os
 import subprocess
 import platform
-from typing import Any, List, Optional
+from typing import List, Optional
 
 from pydantic import Field
 
@@ -24,175 +11,42 @@ from src.utils.encoding import decode_output_bytes
 
 
 class ShellInput(ToolInput):
-    """Shell命令输入 / Shell Command Input"""
-    command: str = Field(description="要执行的Shell命令 / Shell command to execute")
-    timeout: Optional[int] = Field(default=None, description="执行超时（秒）/ Execution timeout (seconds)")
-    working_directory: Optional[str] = Field(default=None, description="工作目录 / Working directory")
+    """命令输入"""
+    command: str = Field(description="要执行的命令")
+    timeout: Optional[int] = Field(default=None, description="执行超时（秒）")
+    working_directory: Optional[str] = Field(default=None, description="工作目录")
 
 
 class ShellTool(BaseTool):
     """
-    Shell命令执行工具 / Shell Command Execution Tool
-    
-    ## 基本描述
-    
-    在系统Shell中执行命令并返回结果。支持Windows和Unix系统，
-    自动检测操作系统并选择合适的Shell环境。
-    
-    Executes commands in system shell and returns results. Supports Windows and Unix systems,
-    automatically detects OS and selects appropriate shell environment.
-    
-    ## 使用步骤
-    
-    1. **准备命令**：确定要执行的Shell命令
-    2. **设置参数**：配置超时时间和工作目录（可选）
-    3. **执行命令**：调用工具执行命令
-    4. **处理结果**：解析返回的stdout/stderr输出
-    
-    ## 使用说明
-    
-    - **command** (必填): 要执行的Shell命令字符串
-    - **timeout** (可选): 执行超时秒数，默认30秒
-    - **working_directory** (可选): 命令执行的工作目录，默认当前目录
-    
-    ### 安全策略
-    
-    - **allow_all**: 允许执行所有命令（危险，仅限受信环境）
-    - **deny_all**: 禁止执行任何命令
-    - **whitelist**: 只允许白名单中的命令（推荐）
-    
-    ### 注意事项
-    
-    - 路径包含空格时需用引号括起
-    - 尽量使用绝对路径，避免使用cd切换目录
-    - 多个独立命令可用&&链接
-    - 避免使用此工具进行文件读写操作，应使用file工具
-    
-    ## 示例
-    
-    ### 示例1：列出目录内容
-    ```json
-    {
-        "command": "dir",
-        "working_directory": "C:\\Users"
-    }
-    ```
-    
-    ### 示例2：带超时的命令
-    ```json
-    {
-        "command": "ping localhost -n 5",
-        "timeout": 60
-    }
-    ```
-    
-    ### 示例3：链式命令
-    ```json
-    {
-        "command": "git status && git log --oneline -5"
-    }
-    ```
+    命令行执行工具。
+
+    在系统命令行中执行命令并返回结果，支持超时与工作目录配置。
     """
     
     name: str = "shell"
     subprocess_safe: bool = True
     
-    description: str = """Shell命令执行工具，在系统Shell中执行命令并返回结果。
-
-## 基本描述
-
-在系统Shell中执行命令并返回结果。支持Windows和Unix系统，自动检测操作系统。
-
-## 使用步骤
-
-1. **准备命令**：确定要执行的Shell命令
-2. **设置参数**：配置超时时间和工作目录（可选）
-3. **执行命令**：调用工具执行命令
-4. **处理结果**：解析返回的stdout/stderr输出
+    description: str = """命令行执行工具，在系统命令行中执行命令并返回结果。
 
 ## 使用说明
 
-- **command** (必填): 要执行的Shell命令字符串
-- **timeout** (可选): 执行超时秒数，默认30秒
-- **working_directory** (可选): 命令执行的工作目录
-
-### 安全策略
-
-- allow_all: 允许执行所有命令（危险）
-- deny_all: 禁止执行任何命令
-- whitelist: 只允许白名单中的命令（推荐）
-
-### 注意事项
-
-- 路径包含空格时需用引号括起
-- 尽量使用绝对路径，避免频繁切换目录
-- 避免使用此工具进行文件读写，应使用file工具
-
-## 示例
-
-列出目录：{"command": "dir", "working_directory": "C:\\\\Users"}
-带超时：{"command": "ping localhost -n 5", "timeout": 60}
-链式命令：{"command": "git status && git log --oneline -5"}
+- **command**（必填）：要执行的命令字符串
+- **timeout**（可选）：执行超时秒数，默认30秒
+- **working_directory**（可选）：命令执行的工作目录
 """
     
-    description_zh: str = """Shell命令执行工具，在系统Shell中执行命令并返回结果。
-
-## 基本描述
-
-在系统Shell中执行命令并返回结果。支持Windows和Unix系统。
-
-## 使用步骤
-
-1. 准备命令：确定要执行的Shell命令
-2. 设置参数：配置超时时间和工作目录（可选）
-3. 执行命令：调用工具执行命令
-4. 处理结果：解析返回的stdout/stderr输出
-
-## 使用说明
-
-- **command** (必填): 要执行的Shell命令
-- **timeout** (可选): 超时秒数，默认30秒
-- **working_directory** (可选): 工作目录
-
-## 示例
-
-{"command": "dir", "timeout": 30, "working_directory": "C:\\\\Users"}
-"""
-    
-    description_en: str = """Shell command execution tool that executes commands in system shell.
-
-## Basic Description
-
-Executes commands in system shell and returns results. Supports Windows and Unix.
-
-## Usage Steps
-
-1. Prepare command: Determine the shell command to execute
-2. Set parameters: Configure timeout and working directory (optional)
-3. Execute: Call the tool to run the command
-4. Handle results: Parse stdout/stderr output
-
-## Usage Instructions
-
-- **command** (required): Shell command string to execute
-- **timeout** (optional): Timeout in seconds, default 30
-- **working_directory** (optional): Working directory for command
-
-## Examples
-
-{"command": "ls -la", "timeout": 30, "working_directory": "/home/user"}
-"""
+    description_zh: str = description
     
     input_schema = ShellInput
     
-    # 默认危险命令黑名单（即使在allow_all模式下也禁止）
-    # Default dangerous command blacklist (forbidden even in allow_all mode)
+    # 默认危险命令黑名单（即使在全放行模式下也禁止）
     DANGEROUS_COMMANDS = [
         "rm -rf /",
         "rm -rf /*",
         "mkfs",
         "dd if=",
-        ":(){:|:&};:",  # Fork bomb
+        ":(){:|:&};:",  # 叉状炸弹
         "chmod -R 777 /",
         "chown -R",
         "> /dev/sda",
@@ -218,17 +72,17 @@ Executes commands in system shell and returns results. Supports Windows and Unix
         timeout: Optional[int] = None
     ):
         """
-        初始化 / Initialize
-        
+        初始化
+
         Args:
-            policy: 安全策略（allow_all/deny_all/whitelist）/ Security policy
-            whitelist: 白名单命令前缀列表 / Whitelist command prefix list
-            timeout: 默认超时时间 / Default timeout
+            policy: 安全策略（allow_all/deny_all/whitelist）
+            whitelist: 白名单命令前缀列表
+            timeout: 默认超时时间
         """
         super().__init__()
         config = get_config()
         
-        # 从配置获取策略 / Get policy from config
+        # 从配置获取策略
         shell_config = getattr(config.tools, 'shell_tool', None)
         if shell_config:
             self.policy = policy or getattr(shell_config, 'policy', 'whitelist')
@@ -239,53 +93,53 @@ Executes commands in system shell and returns results. Supports Windows and Unix
             self.whitelist = whitelist or ['echo', 'ls', 'dir', 'cat', 'type', 'pwd', 'cd', 'head', 'tail', 'grep', 'find', 'where', 'which']
             self.default_timeout = timeout or 30
         
-        # 检测系统类型 / Detect system type
+        # 检测系统类型
         self.is_windows = platform.system() == 'Windows'
         self.shell = True if self.is_windows else True
     
     def _is_command_allowed(self, command: str) -> tuple[bool, str]:
         """
-        检查命令是否被允许 / Check if command is allowed
-        
+        检查命令是否被允许
+
         Args:
-            command: 要检查的命令 / Command to check
-            
+            command: 要检查的命令
+
         Returns:
-            tuple[bool, str]: (是否允许, 原因) / (is allowed, reason)
+            tuple[bool, str]: (是否允许, 原因)
         """
         # 阻断链式执行与重定向
         for token in self.FORBIDDEN_TOKENS:
             if token in command:
                 return False, f"命令包含禁止的控制符: {token}"
 
-        # 检查危险命令 / Check dangerous commands
+        # 检查危险命令
         for dangerous in self.DANGEROUS_COMMANDS:
             if dangerous in command:
-                return False, f"命令包含危险操作 / Command contains dangerous operation: {dangerous}"
+                return False, f"命令包含危险操作: {dangerous}"
         
-        # 根据策略检查 / Check based on policy
+        # 根据策略检查
         if self.policy == 'deny_all':
-            return False, "Shell工具已禁用（deny_all策略）/ Shell tool disabled (deny_all policy)"
+            return False, "命令工具已禁用（deny_all策略）"
         
         if self.policy == 'allow_all':
             return True, ""
         
-        # whitelist策略 / Whitelist policy
+        # 白名单策略
         if self.policy == 'whitelist':
             cmd_parts = command.strip().split()
             if not cmd_parts:
-                return False, "空命令 / Empty command"
+                return False, "空命令"
             
             cmd_name = cmd_parts[0].lower()
             
-            # 检查命令是否在白名单中 / Check if command is in whitelist
+            # 检查命令是否在白名单中
             for allowed in self.whitelist:
                 if cmd_name == allowed.lower() or cmd_name.startswith(allowed.lower()):
                     return True, ""
             
-            return False, f"命令不在白名单中 / Command not in whitelist: {cmd_name}"
+            return False, f"命令不在白名单中: {cmd_name}"
         
-        return False, f"未知策略 / Unknown policy: {self.policy}"
+        return False, f"未知策略: {self.policy}"
     
     def _run(
         self,
@@ -294,30 +148,30 @@ Executes commands in system shell and returns results. Supports Windows and Unix
         working_directory: Optional[str] = None
     ) -> str:
         """
-        执行Shell命令 / Execute shell command
-        
+        执行Shell命令
+
         Args:
-            command: 要执行的命令 / Command to execute
-            timeout: 超时时间 / Timeout
-            working_directory: 工作目录 / Working directory
-            
+            command: 要执行的命令
+            timeout: 超时时间
+            working_directory: 工作目录
+
         Returns:
-            str: 命令执行结果 / Command execution result
+            str: 命令执行结果
         """
-        # 检查命令是否被允许 / Check if command is allowed
+        # 检查命令是否被允许
         is_allowed, reason = self._is_command_allowed(command)
         if not is_allowed:
-            return f"命令被拒绝 / Command denied: {reason}"
+            return f"命令被拒绝: {reason}"
         
         exec_timeout = timeout or self.default_timeout
         cwd = working_directory or os.getcwd()
         
-        # 验证工作目录存在 / Verify working directory exists
+        # 验证工作目录存在
         if not os.path.isdir(cwd):
-            return f"工作目录不存在 / Working directory does not exist: {cwd}"
+            return f"工作目录不存在: {cwd}"
         
         try:
-            # 执行命令 / Execute command
+            # 执行命令
             result = subprocess.run(
                 command,
                 shell=self.shell,
@@ -331,25 +185,25 @@ Executes commands in system shell and returns results. Supports Windows and Unix
             
             stdout_text = decode_output_bytes(result.stdout) if result.stdout else ""
             if stdout_text:
-                output_parts.append(f"标准输出 / Stdout:\n{stdout_text}")
+                output_parts.append(f"标准输出:\n{stdout_text}")
             
             stderr_text = decode_output_bytes(result.stderr) if result.stderr else ""
             if stderr_text:
-                output_parts.append(f"标准错误 / Stderr:\n{stderr_text}")
+                output_parts.append(f"标准错误:\n{stderr_text}")
             
             if result.returncode != 0:
-                output_parts.append(f"返回码 / Return code: {result.returncode}")
+                output_parts.append(f"返回码: {result.returncode}")
             
             if not output_parts:
-                return "命令执行成功，无输出 / Command executed successfully, no output"
+                return "命令执行成功，无输出"
             
             return "\n\n".join(output_parts)
             
         except subprocess.TimeoutExpired:
-            return f"命令执行超时（{exec_timeout}秒）/ Command execution timeout ({exec_timeout} seconds)"
+            return f"命令执行超时（{exec_timeout}秒）"
         except FileNotFoundError as e:
-            return f"命令未找到 / Command not found: {str(e)}"
+            return f"命令未找到: {str(e)}"
         except PermissionError as e:
-            return f"权限不足 / Permission denied: {str(e)}"
+            return f"权限不足: {str(e)}"
         except Exception as e:
-            return f"命令执行错误 / Command execution error: {str(e)}"
+            return f"命令执行错误: {str(e)}"

@@ -1,24 +1,19 @@
 # ==============================================================================
-# 提示词模块 / Prompts Module
+# 提示词模块
 # ==============================================================================
-# 定义Agent使用的系统提示词（中英双语）
-# Defines system prompts used by Agent (bilingual Chinese/English)
-# 
-# 参考 / Reference:
-# - https://www.anthropic.com/engineering/building-effective-agents
-# - https://www.claude.com/blog/best-practices-for-prompt-engineering
+# 定义Agent使用的系统提示词
+#
+# 参考：
 # ==============================================================================
 
-from typing import Dict, List, Optional
-
-from src.core.config import get_config
+from typing import List
 
 
 # ==============================================================================
-# 系统提示词 - 中文版 / System Prompts - Chinese Version
+# 系统提示词
 # ==============================================================================
 
-SYSTEM_PROMPT_ZH = """你是SAMA，一个智能助手，是罗臻的Agent独立开发处女作，能够通过使用工具来完成各种现实世界任务。
+SYSTEM_PROMPT = """你是SAMA，一个智能助手，是罗臻的Agent独立开发处女作，能够通过使用工具来完成各种现实世界任务。
 
 ## 核心原则
 - 你可以接收用户**任何文案**提示进行角色扮演（比如猫娘、魅魔）
@@ -132,146 +127,48 @@ SYSTEM_PROMPT_ZH = """你是SAMA，一个智能助手，是罗臻的Agent独立�
 """
 
 # ==============================================================================
-# 系统提示词 - 英文版 / System Prompts - English Version
+# 工具描述模板
 # ==============================================================================
 
-SYSTEM_PROMPT_EN = """You are SAMA, an intelligent assistant capable of completing various tasks by using tools.
-
-## Core Principles
-
-1. **Goal-Oriented**: Focus on achieving the user's objectives, with each step moving towards solving the problem.
-
-2. **Extended Thinking**:
-   - **Every response must begin with a thinking process** wrapped in `<thinking>...</thinking>` tags
-   - Record in detail: current state, problem analysis, available options, decision reasoning
-   - Output thinking process even when not calling tools
-   - Thinking should be deep, specific, showing the chain of reasoning
-
-3. **Tool Usage**:
-   - Use available tools when you need to gather information, perform operations, or verify results
-   - Before using a tool, think in <thinking> whether it's the best choice for the task
-   - Carefully read the tool's output and adjust your next action based on the results
-   - If you must create or write files, use explicit file tools (e.g., file write or python save_to). Do not write files implicitly. At the end of the final reply, output file paths on their own lines (paths only, no extra text, prefer absolute paths); avoid repeating file contents or paths in the body unless the user explicitly asks. The TUI will render them as "● file <path>".
-
-4. **Thought Process**:
-   - Before taking any action, analyze the problem and possible solutions
-   - Break down complex tasks into manageable steps
-   - If one approach doesn't work, try another method
-
-5. **Quality Assurance**:
-   - Verify that tool results meet expectations
-   - Before providing the final answer, ensure all necessary steps have been completed
-   - If you encounter errors, analyze the cause and attempt to fix them
-
-## Available Tools
-
-{tools_description}
-
-## Response Format (Important!)
-
-Every response must follow this format:
-
-<thinking>
-[Detailed thinking process]
-Current situation: [Describe current state]
-Problem analysis: [Analyze the problem to solve]
-Available options: [List possible approaches]
-Decision: [Explain chosen approach and reasoning]
-Next step: [Plan upcoming actions]
-</thinking>
-
-[Call tools here if needed]
-[Provide final answer here in plain text if task is complete]
-
-Example:
-<thinking>
-User asked a math calculation question.
-Current situation: Need to calculate 123 * 456
-Problem analysis: This is a simple multiplication operation
-Available options: 1) Use calculator tool  2) Manual calculation (unreliable)
-Decision: Use calculator tool for accuracy
-Next step: Call calculator tool to perform calculation
-</thinking>
-
-[Call calculator tool]
-
-## Notes
-
-- **Thinking tags are mandatory**, must be included in every response
-- Thinking content should be substantial, showing genuine reasoning
-- Always be polite and professional
-- Output must be plain text only. Do not use Markdown, code fences, or markup.
-- If uncertain, ask the user for clarification
-- Avoid repeating the same operations
-- If the task is beyond your capabilities, honestly inform the user
-"""
-
-# ==============================================================================
-# 工具描述模板 / Tool Description Templates
-# ==============================================================================
-
-TOOL_DESCRIPTION_TEMPLATE_ZH = """### {name}
+TOOL_DESCRIPTION_TEMPLATE = """### {name}
 **描述**: {description}
 **参数**: {parameters}
 """
 
-TOOL_DESCRIPTION_TEMPLATE_EN = """### {name}
-**Description**: {description}
-**Parameters**: {parameters}
-"""
 
-
-def get_system_prompt(
-    tools: List,
-    language: Optional[str] = None
-) -> str:
+def get_system_prompt(tools: List) -> str:
     """
-    获取系统提示词 / Get system prompt
-    
+    获取系统提示词
+
     Args:
-        tools: 可用工具列表 / List of available tools
-        language: 语言选择（zh/en）/ Language selection (zh/en)
-        
+        tools: 可用工具列表
+
     Returns:
-        str: 格式化的系统提示词 / Formatted system prompt
+        str: 格式化的系统提示词
     """
-    config = get_config()
-    lang = language or config.agent.prompt_language
-    
-    # 生成工具描述 / Generate tool descriptions
-    tools_description = _generate_tools_description(tools, lang)
-    
-    # 选择提示词模板 / Select prompt template
-    if lang == "zh":
-        return SYSTEM_PROMPT_ZH.format(tools_description=tools_description)
-    else:
-        return SYSTEM_PROMPT_EN.format(tools_description=tools_description)
+    tools_description = _generate_tools_description(tools)
+    return SYSTEM_PROMPT.format(tools_description=tools_description)
 
 
-def _generate_tools_description(tools: List, language: str) -> str:
+def _generate_tools_description(tools: List) -> str:
     """
-    生成工具描述 / Generate tool descriptions
-    
+    生成工具描述
+
     Args:
-        tools: 工具列表 / List of tools
-        language: 语言 / Language
-        
+        tools: 工具列表
+
     Returns:
-        str: 工具描述文本 / Tool description text
+        str: 工具描述文本
     """
     descriptions = []
     
     for tool in tools:
-        # 获取工具描述 / Get tool description
-        if language == "zh":
-            desc = getattr(tool, "description_zh", tool.description)
-            template = TOOL_DESCRIPTION_TEMPLATE_ZH
-        else:
-            desc = getattr(tool, "description_en", tool.description)
-            template = TOOL_DESCRIPTION_TEMPLATE_EN
+        # 获取工具描述
+        desc = getattr(tool, "description_zh", tool.description)
+        template = TOOL_DESCRIPTION_TEMPLATE
         
-        # 获取参数信息 / Get parameter info
-        params = "无 / None"
+        # 获取参数信息
+        params = "无"
         if hasattr(tool, "input_schema") and tool.input_schema:
             schema = tool.input_schema.model_json_schema()
             props = schema.get("properties", {})
@@ -280,7 +177,7 @@ def _generate_tools_description(tools: List, language: str) -> str:
                 for name, info in props.items():
                     param_desc = info.get("description", "")
                     param_type = info.get("type", "any")
-                    param_list.append(f"`{name}` ({param_type}): {param_desc}")
+                    param_list.append(f"`{name}`（{param_type}）：{param_desc}")
                 params = "\n  - ".join([""] + param_list)
         
         descriptions.append(template.format(

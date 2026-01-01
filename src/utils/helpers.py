@@ -1,14 +1,13 @@
 # ==============================================================================
-# 工具函数模块 / Utility Functions Module
+# 工具函数模块
 # ==============================================================================
 # 提供各种通用工具函数
-# Provides various utility functions
 # ==============================================================================
 
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 
 def truncate_text(text: str, max_length: int = 1000, suffix: str = "...") -> str:
@@ -149,14 +148,14 @@ def refine_search_result(raw_result: str) -> str:
     try:
         data = json.loads(raw_result)
     except (json.JSONDecodeError, TypeError):
-        # 非JSON格式，直接返回原结果 / Not JSON format, return as-is
+        # 非JSON格式，直接返回原结果
         return raw_result
     
-    # 检查是否为搜索结果格式 / Check if it's search result format
+    # 检查是否为搜索结果格式
     if not isinstance(data, dict) or "results" not in data:
         return raw_result
     
-    # 精炼搜索结果 / Refine search results
+    # 精炼搜索结果
     refined = {
         "query": data.get("query", ""),
         "engine": data.get("engine", ""),
@@ -166,14 +165,12 @@ def refine_search_result(raw_result: str) -> str:
     
     for item in data.get("results", []):
         # 从body提取精炼摘要（取前200字符作为abstract）
-        # Extract refined abstract from body (first 200 chars)
         body = item.get("body", "")
         abstract = body[:200].strip()
         if len(body) > 200:
             abstract += "..."
         
         # 构建key_content：包含button建议和其他关键信息
-        # Build key_content: includes button suggestions and other key info
         key_content = {
             "further_search": item.get("button", []),
             "source_url": item.get("url", "")
@@ -202,7 +199,7 @@ def is_search_result(result: str) -> bool:
     """
     try:
         data = json.loads(result)
-        # 检查搜索结果的特征字段 / Check for search result characteristic fields
+        # 检查搜索结果的特征字段
         return (
             isinstance(data, dict) and 
             "results" in data and 
@@ -224,39 +221,6 @@ def generate_request_id() -> str:
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     random_part = uuid.uuid4().hex[:8]
     return f"req_{timestamp}_{random_part}"
-
-
-def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
-    """
-    从文本中提取JSON / Extract JSON from text
-    
-    Args:
-        text: 包含JSON的文本 / Text containing JSON
-        
-    Returns:
-        Optional[Dict]: 解析后的JSON / Parsed JSON, or None if failed
-    """
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-    
-    patterns = [
-        r"```json\s*([\s\S]*?)\s*```",
-        r"```\s*([\s\S]*?)\s*```",
-        r"\{[\s\S]*\}",
-        r"\[[\s\S]*\]",
-    ]
-    
-    for pattern in patterns:
-        matches = re.findall(pattern, text)
-        for match in matches:
-            try:
-                return json.loads(match)
-            except json.JSONDecodeError:
-                continue
-    
-    return None
 
 
 def estimate_tokens(text: str) -> int:

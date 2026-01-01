@@ -1,5 +1,5 @@
 # ==============================================================================
-# SAMA Agent 主包 / SAMA Agent Main Package
+# SAMA 智能体主包
 # ==============================================================================
 
 from src.agents import BaseAgent
@@ -41,28 +41,28 @@ __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
-    # Agent
+    # 智能体
     "BaseAgent",
-    # Config
+    # 配置
     "Config",
     "get_config",
     "load_config",
-    # Logger
+    # 日志
     "get_logger",
     "init_logging",
-    # Memory
+    # 记忆
     "FileContext",
     "ConversationMemory",
     "get_memory",
     "reset_memory",
-    # Schema
+    # 数据结构
     "AgentState",
     "ToolResultStatus",
     "ToolCall",
     "ToolResult",
     "AgentStep",
     "AgentResponse",
-    # Tools
+    # 工具
     "BaseTool",
     "ToolInput",
     "ShellTool",
@@ -71,7 +71,7 @@ __all__ = [
     "WebSearchTool",
     "ALL_TOOLS",
     "DEFAULT_TOOLS",
-    # Document Processing
+    # 文档处理
     "DocumentConverter",
     "preprocess_files",
     "get_supported_extensions",

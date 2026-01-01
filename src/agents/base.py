@@ -1,16 +1,12 @@
 # ==============================================================================
-# AI Agent 基础实现 / AI Agent Base Implementation
+# 智能体基础实现
 # ==============================================================================
-# 实现基于LLM的Agent循环，通过工具完成任务
-# Implements LLM-based Agent loop, completing tasks through tools
+# 实现基于大模型的智能体循环，通过工具完成任务
 #
-# 设计理念 / Design Philosophy:
-# - Agent是一个在循环中使用工具来实现目标的LLM
-# - Agent can handle complex tasks, but the implementation is usually simple
-# - It's typically just an LLM using tools in a loop based on environment feedback
+# 设计理念
+# - 智能体是在循环中使用工具来实现目标的大模型
 #
-# 参考 / Reference:
-# - https://www.anthropic.com/engineering/building-effective-agents
+# 参考
 # ==============================================================================
 
 import json
@@ -61,21 +57,14 @@ def _run_tool_in_subprocess(module_name: str, class_name: str, arguments: Dict[s
 
 class BaseAgent:
     """
-    基础Agent类 / Base Agent Class
-    
-    实现核心的Agent循环逻辑：
+    基础智能体类
+
+    实现核心的工具循环逻辑：
     1. 接收用户输入
-    2. 调用LLM进行思考
-    3. 根据LLM的决策执行工具
+    2. 调用LLM生成决策
+    3. 根据决策执行工具
     4. 将工具结果反馈给LLM
     5. 重复直到任务完成或达到最大迭代次数
-    
-    Implements core Agent loop logic:
-    1. Receive user input
-    2. Call LLM for thinking
-    3. Execute tools based on LLM's decision
-    4. Feed tool results back to LLM
-    5. Repeat until task completed or max iterations reached
     """
     
     def __init__(
@@ -86,80 +75,78 @@ class BaseAgent:
         system_prompt: Optional[str] = None,
     ):
         """
-        初始化Agent / Initialize Agent
+        初始化智能体
         
         Args:
-            tools: 可用工具列表（实例或类）/ List of available tools (instances or classes)
-            config: 配置对象 / Configuration object
-            memory: 对话记忆 / Conversation memory
-            system_prompt: 自定义系统提示词 / Custom system prompt
+            tools: 可用工具列表（实例或类）
+            config: 配置对象
+            memory: 对话记忆
+            system_prompt: 自定义系统提示词
         """
-        # 初始化日志 / Initialize logging
+        # 初始化日志
         init_logging()
         
-        # 加载配置 / Load configuration
+        # 加载配置
         self.config = config or get_config()
         
-        # 初始化工作区 / Initialize workspace
+        # 初始化工作区
         self._init_workspace()
         
-        # 初始化工具 / Initialize tools
+        # 初始化工具
         self._init_tools(tools)
         
-        # 初始化记忆 / Initialize memory
+        # 初始化记忆
         self.memory = memory or get_memory()
         
-        # 设置系统提示词 / Set system prompt
+        # 设置系统提示词
         if system_prompt:
             self.base_system_prompt = system_prompt
         else:
             self.base_system_prompt = get_system_prompt(
-                tools=list(self.tools.values()),
-                language=self.config.agent.prompt_language
+                tools=list(self.tools.values())
             )
         
         self._refresh_system_message()
         
-        # 初始化OpenAI客户端 / Initialize OpenAI client
+        # 初始化模型客户端
         self._init_client()
         
-        # Agent状态 / Agent state
+        # 智能体状态
         self.state = AgentState.IDLE
         self.current_step = 0
         self.steps: List[AgentStep] = []
         self._max_tokens_warned = False
         self._ui_hooks: Dict[str, Any] = {}
         
-        # 显式上下文模式 / Explicit context mode
-        self.verbose_context = False  # 是否显示详细上下文 / Whether to show detailed context
+        # 显式上下文模式
+        self.verbose_context = False  # 是否显示详细上下文
         
-        logger.info(f"Agent初始化完成 / Agent initialized with {len(self.tools)} tools")
-        logger.info(f"工作区 / Workspace: {self.workspace}")
+        logger.info(f"智能体初始化完成，工具数量: {len(self.tools)}")
+        logger.info(f"工作区: {self.workspace}")
     
     def _init_workspace(self) -> None:
         """
-        初始化工作区目录 / Initialize workspace directory
-        
+        初始化工作区目录
+
         创建工作区目录（如果不存在），并设置工作区路径
-        Creates workspace directory if not exists, and sets workspace path
         """
         workspace_path = Path(self.config.agent.workspace)
         workspace_path.mkdir(parents=True, exist_ok=True)
         self.workspace = str(workspace_path.resolve())
-        logger.info(f"工作区已初始化 / Workspace initialized: {self.workspace}")
+        logger.info(f"工作区已初始化: {self.workspace}")
 
     def set_ui_hooks(self, hooks: Optional[Dict[str, Any]]) -> None:
         """
-        设置UI回调 / Set UI hooks
+        设置UI回调
 
         Args:
-            hooks: 回调字典 / Hook dictionary
+            hooks: 回调字典
         """
         self._ui_hooks = hooks or {}
 
     def _emit_ui_event(self, event: str, **payload: Any) -> None:
         """
-        触发UI事件 / Emit UI event
+        触发UI事件
         """
         handler = self._ui_hooks.get(event)
         if not callable(handler):
@@ -167,7 +154,7 @@ class BaseAgent:
         try:
             handler(**payload)
         except Exception as exc:
-            logger.debug(f"UI回调失败 / UI hook failed: {event}: {exc}")
+            logger.debug(f"UI回调失败: {event}: {exc}")
     
     def _build_workspace_section(self) -> str:
         """
@@ -175,33 +162,32 @@ class BaseAgent:
         """
         workspace_section = f"""
 
-## 工作区与文件管理 / Workspace and File Management
+## 工作区与文件管理
 
-**工作区路径 / Workspace Path**: `{self.workspace}`
+**工作区路径**: `{self.workspace}`
 
-你可以在工作区中创建、修改和管理文件。对于重要的中间文件（如生成的脚本、数据文件、搜索结果等），你应该：
-You can create, modify and manage files in the workspace. For important intermediate files (e.g., generated scripts, data files), you should:
+你可以在工作区中创建、修改和管理文件。对于重要的中间文件（如生成的脚本、数据文件、搜索结果等），请遵循：
 
-1. **将文件保存到工作区** / Save files to workspace
-2. **使用文件工具记录文件上下文** / Record file context using file tools
-3. **在对话中引用这些文件** / Reference these files in conversation
-4. **及时清理不再需要的旧文件** / Clean up old files that are no longer needed
+1. **将文件保存到工作区**
+2. **使用文件工具记录文件上下文**
+3. **在对话中引用这些文件**
+4. **及时清理不再需要的旧文件**
 
-当前文件上下文 / Current file context:
+当前文件上下文：
 {self.memory.get_files_summary()}
 
-**上下文策略 / Context Strategy**:
+**上下文策略**：
 - 文件内容按相关性分块注入，预算不足时优先压缩文件上下文
 - 需要完整文件时，请明确要求读取或更新文件上下文
 
-## 工作记忆 / Working Memory
+## 工作记忆
 
 {self.memory.get_context_summary()}
 
-⚠️ **重要提示 / Important Notes**:
-- 避免重复执行相同操作 / Avoid repeating the same operations
-- 如果某个工具已经成功调用过，分析结果而不是重复调用 / If a tool has been called successfully, analyze the result instead of calling again
-- 每次操作前，先检查工作记忆中是否已有相关结果 / Before each operation, check if results already exist in working memory
+**重要提示**：
+- 避免重复执行相同操作
+- 如果某个工具已经成功调用过，优先分析结果而不是重复调用
+- 每次操作前先检查工作记忆中是否已有相关结果
 """
         return workspace_section
 
@@ -220,13 +206,13 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _extract_thinking(self, content: str) -> Optional[str]:
         """
-        从内容中提取 <thinking> 标签内的文本 / Extract text within <thinking> tags
-        
+        从内容中提取 <thinking> 标签内的文本
+
         Args:
-            content: 消息内容 / Message content
-            
+            content: 消息内容
+
         Returns:
-            Optional[str]: 思考内容，如果没有则返回 None / Thinking content, None if not found
+            Optional[str]: 思考内容，如果没有则返回 None
         """
         pattern = r'<thinking>(.*?)</thinking>'
         match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
@@ -238,7 +224,7 @@ You can create, modify and manage files in the workspace. For important intermed
 
     def _strip_thinking_tags(self, content: str) -> str:
         """
-        移除<thinking>标签内容 / Remove <thinking> tag content
+        移除 <thinking> 标签内容
         """
         if not content:
             return ""
@@ -247,32 +233,31 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _init_tools(self, tools: Optional[List[Union[BaseTool, Type[BaseTool]]]] = None) -> None:
         """
-        初始化工具 / Initialize tools
-        
+        初始化工具
+
         Args:
-            tools: 工具列表 / List of tools
+            tools: 工具列表
         """
         self.tools: Dict[str, BaseTool] = {}
         
-        # 使用默认工具或自定义工具 / Use default or custom tools
+        # 使用默认工具或自定义工具
         tool_list = tools or DEFAULT_TOOLS
         
         for tool in tool_list:
-            # 如果是类，实例化它 / If it's a class, instantiate it
+            # 如果是类，实例化它
             if isinstance(tool, type):
                 tool_instance = tool()
             else:
                 tool_instance = tool
             
             self.tools[tool_instance.name] = tool_instance
-            logger.debug(f"注册工具 / Registered tool: {tool_instance.name}")
+            logger.debug(f"注册工具: {tool_instance.name}")
     
     def _init_client(self) -> None:
         """
-        初始化OpenAI客户端 / Initialize OpenAI client
-        
+        初始化OpenAI客户端
+
         使用OpenAI兼容接口连接模型
-        Uses OpenAI compatible interface to connect to model
         """
         self.client = OpenAI(
             api_key=self.config.model.api_key,
@@ -280,23 +265,22 @@ You can create, modify and manage files in the workspace. For important intermed
             timeout=self.config.model.timeout
         )
         
-        logger.info(f"LLM客户端初始化 / LLM client initialized: {self.config.model.base_url}")
+        logger.info(f"LLM客户端初始化: {self.config.model.base_url}")
     
     def _get_tools_for_api(self) -> List[Dict[str, Any]]:
         """
-        获取API格式的工具定义 / Get tool definitions in API format
-        
+        获取API格式的工具定义
+
         符合Kimi API要求的工具定义格式
-        Tool definition format compliant with Kimi API requirements
-        
+
         Returns:
-            List[Dict]: OpenAI函数调用格式的工具定义 / Tool definitions in OpenAI function calling format
+            List[Dict]: OpenAI函数调用格式的工具定义
         """
         return [tool.get_schema() for tool in self.tools.values()]
     
     def _call_llm(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
         """
-        调用LLM / Call LLM
+        调用LLM
         """
         max_retries = getattr(self.config.model, "max_retries", 2)
         backoff_base = getattr(self.config.model, "retry_backoff_base", 1.5)
@@ -305,7 +289,7 @@ You can create, modify and manage files in the workspace. For important intermed
         max_tokens = self.config.model.effective_max_tokens
         if max_tokens != self.config.model.max_tokens and not self._max_tokens_warned:
             logger.warning(
-                f"max_tokens 已裁剪 / max_tokens clamped: {self.config.model.max_tokens} -> {max_tokens}"
+                f"max_tokens 已裁剪: {self.config.model.max_tokens} -> {max_tokens}"
             )
             self._max_tokens_warned = True
 
@@ -321,13 +305,13 @@ You can create, modify and manage files in the workspace. For important intermed
             except Exception as e:
                 last_error = e
                 if attempt >= max_retries or not self._should_retry(e):
-                    logger.error(f"LLM调用失败 / LLM call failed: {str(e)}")
+                    logger.error(f"LLM调用失败: {str(e)}")
                     raise
                 delay = min(backoff_base * (2 ** attempt), backoff_max)
-                logger.warning(f"LLM调用失败，准备重试 / Retry LLM call: {str(e)}")
+                logger.warning(f"LLM调用失败，准备重试: {str(e)}")
                 time.sleep(delay)
 
-        logger.error(f"LLM调用失败 / LLM call failed: {str(last_error)}")
+        logger.error(f"LLM调用失败: {str(last_error)}")
         raise last_error
 
     def _should_retry(self, error: Exception) -> bool:
@@ -366,19 +350,19 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def _execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         """
-        执行工具 / Execute tool with timeout protection
+        执行工具（带超时保护）
         """
         if tool_name not in self.tools:
             return ToolResult(
                 tool_name=tool_name,
                 status=ToolResultStatus.ERROR,
                 output=None,
-                error_message=f"未知工具 / Unknown tool: {tool_name}"
+                error_message=f"未知工具: {tool_name}"
             )
         
         tool = self.tools[tool_name]
-        logger.info(f"执行工具 / Executing tool: {tool_name}")
-        logger.debug(f"参数 / Arguments: {arguments}")
+        logger.info(f"执行工具: {tool_name}")
+        logger.debug(f"参数: {arguments}")
         
         # 使用线程池为工具执行设置超时，避免阻塞主循环
         tool_timeout = getattr(tool, "default_timeout", None)
@@ -393,17 +377,17 @@ You can create, modify and manage files in the workspace. For important intermed
             try:
                 result = future.result(timeout=tool_timeout)
             except concurrent.futures.TimeoutError:
-                logger.error(f"工具执行超时 / Tool execution timeout: {tool_name} after {tool_timeout}s")
+                logger.error(f"工具执行超时: {tool_name} 超过 {tool_timeout}s")
                 future.cancel()
                 return ToolResult(
                     tool_name=tool_name,
                     status=ToolResultStatus.TIMEOUT,
                     output=None,
-                    error_message=f"Tool execution timeout after {tool_timeout}s",
+                    error_message=f"工具执行超时，超过 {tool_timeout}s",
                     execution_time=tool_timeout
                 )
             except Exception as e:
-                logger.error(f"工具执行失败 / Tool execution failed: {str(e)}")
+                logger.error(f"工具执行失败: {str(e)}")
                 return ToolResult(
                     tool_name=tool_name,
                     status=ToolResultStatus.ERROR,
@@ -412,7 +396,7 @@ You can create, modify and manage files in the workspace. For important intermed
                     execution_time=0.0
                 )
         
-        logger.info(f"工具执行完成 / Tool execution completed: {tool_name}, 状态/status: {getattr(result, 'status', 'unknown')}")
+        logger.info(f"工具执行完成: {tool_name}, 状态: {getattr(result, 'status', 'unknown')}")
         
         return result
 
@@ -440,24 +424,24 @@ You can create, modify and manage files in the workspace. For important intermed
         if process.is_alive():
             process.terminate()
             process.join(1)
-            logger.error(f"工具执行超时 / Tool execution timeout: {tool.name} after {timeout}s")
+            logger.error(f"工具执行超时: {tool.name} 超过 {timeout}s")
             return ToolResult(
                 tool_name=tool.name,
                 status=ToolResultStatus.TIMEOUT,
                 output=None,
-                error_message=f"Tool execution timeout after {timeout}s",
+                error_message=f"工具执行超时，超过 {timeout}s",
                 execution_time=timeout
             )
 
         try:
             payload = result_queue.get_nowait()
         except queue_module.Empty:
-            logger.error(f"工具子进程未返回结果 / Tool subprocess returned no result: {tool.name}")
+            logger.error(f"工具子进程未返回结果: {tool.name}")
             return ToolResult(
                 tool_name=tool.name,
                 status=ToolResultStatus.ERROR,
                 output=None,
-                error_message="Tool subprocess returned no result",
+                error_message="工具子进程未返回结果",
                 execution_time=time.time() - start_time
             )
 
@@ -469,8 +453,8 @@ You can create, modify and manage files in the workspace. For important intermed
                 execution_time=time.time() - start_time
             )
 
-        error_message = payload.get("error") or "Unknown error"
-        logger.error(f"工具执行失败 / Tool execution failed: {error_message}")
+        error_message = payload.get("error") or "未知错误"
+        logger.error(f"工具执行失败: {error_message}")
         return ToolResult(
             tool_name=tool.name,
             status=ToolResultStatus.ERROR,
@@ -485,29 +469,29 @@ You can create, modify and manage files in the workspace. For important intermed
         arguments: Dict[str, Any]
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         """
-        校验工具参数 / Validate tool arguments
+        校验工具参数
         """
         if not tool.input_schema:
             return arguments, None
         if not isinstance(arguments, dict):
-            return {}, "工具参数必须为对象 / Tool arguments must be an object"
+            return {}, "工具参数必须为对象"
         try:
             model = tool.input_schema(**arguments)
         except ValidationError as exc:
-            return arguments, f"工具参数校验失败 / Tool input validation failed: {exc}"
+            return arguments, f"工具参数校验失败: {exc}"
         if hasattr(model, "model_dump"):
             return model.model_dump(), None
         return model.dict(), None
     
     def _process_tool_calls(self, tool_calls: List[Any]) -> List[ToolResult]:
         """
-        处理工具调用 / Process tool calls
-        
+        处理工具调用
+
         Args:
-            tool_calls: 工具调用列表 / List of tool calls
-            
+            tool_calls: 工具调用列表
+
         Returns:
-            List[ToolResult]: 工具执行结果列表 / List of tool execution results
+            List[ToolResult]: 工具执行结果列表
         """
         results: List[Optional[ToolResult]] = [None] * len(tool_calls)
         self._tool_call_ids = {}
@@ -538,18 +522,18 @@ You can create, modify and manage files in the workspace. For important intermed
             tool_name = tool_call.function.name
             parse_error = None
 
-            # 解析参数 / Parse arguments
+            # 解析参数
             try:
                 arguments = json.loads(tool_call.function.arguments)
             except json.JSONDecodeError as exc:
                 arguments = {}
-                parse_error = f"Invalid JSON: {exc}"
+                parse_error = f"JSON 解析失败: {exc}"
 
             if not isinstance(arguments, dict):
                 arguments = {}
-                parse_error = parse_error or "工具参数必须为对象 / Tool arguments must be an object"
+                parse_error = parse_error or "工具参数必须为对象"
 
-            # 获取tool_call_id（使用LLM返回的） / Get tool_call_id from LLM response
+            # 获取工具调用标识（使用模型返回的）
             call_id = getattr(tool_call, "id", None) or f"call_{tool_name}_{i}"
             self._tool_call_ids[i] = call_id
             self._tool_call_args[i] = arguments
@@ -567,7 +551,7 @@ You can create, modify and manage files in the workspace. For important intermed
                     tool_name=tool_name,
                     status=ToolResultStatus.ERROR,
                     output=None,
-                    error_message=f"未知工具 / Unknown tool: {tool_name}"
+                    error_message=f"未知工具: {tool_name}"
                 )
                 _record_result(i, call_record, result, arguments, call_id)
                 continue
@@ -578,7 +562,7 @@ You can create, modify and manage files in the workspace. For important intermed
                     tool_name=tool_name,
                     status=ToolResultStatus.ERROR,
                     output=None,
-                    error_message=f"工具参数解析失败 / Tool arguments parse failed: {parse_error}"
+                    error_message=f"工具参数解析失败: {parse_error}"
                 )
                 _record_result(i, call_record, result, arguments, call_id)
                 continue
@@ -598,7 +582,7 @@ You can create, modify and manage files in the workspace. For important intermed
             call_record.arguments = arguments
             self._tool_call_args[i] = arguments
 
-            # 如果是文件相关工具，进行额外检查：仅在读取时确保目标文件在memory.files或路径存在
+            # 如果是文件相关工具，进行额外检查：读取时确保目标文件已记录或路径存在
             if tool_name in ("file", "read_file", "write_file"):
                 operation = str(arguments.get("operation", "")).lower()
                 if tool_name == "read_file":
@@ -617,7 +601,7 @@ You can create, modify and manage files in the workspace. For important intermed
                                 tool_name=tool_name,
                                 status=ToolResultStatus.ERROR,
                                 output=None,
-                                error_message=f"Unknown or missing file: {file_path}"
+                                error_message=f"未知或缺失的文件: {file_path}"
                             )
                             _record_result(i, call_record, result, arguments, call_id)
                             continue
@@ -697,7 +681,7 @@ You can create, modify and manage files in the workspace. For important intermed
                                 tool_name=entry["tool_name"],
                                 status=ToolResultStatus.ERROR,
                                 output=None,
-                                error_message=f"工具执行异常 / Tool execution error: {exc}"
+                                error_message=f"工具执行异常: {exc}"
                             )
                         _record_result(
                             entry["index"],
@@ -714,7 +698,7 @@ You can create, modify and manage files in the workspace. For important intermed
                     tool_name=tool_calls[idx].function.name,
                     status=ToolResultStatus.ERROR,
                     output=None,
-                    error_message="工具结果缺失 / Tool result missing"
+                    error_message="工具结果缺失"
                 )
             final_results.append(result)
 
@@ -722,49 +706,48 @@ You can create, modify and manage files in the workspace. For important intermed
     
     def run(self, user_input: str) -> AgentResponse:
         """
-        运行Agent处理用户请求 / Run Agent to process user request
-        
-        这是Agent的主循环，实现"工具循环"模式
-        This is the Agent's main loop, implementing the "tool loop" pattern
-        
+        运行智能体处理用户请求
+
+        这是智能体的主循环，实现“工具循环”模式
+
         Args:
-            user_input: 用户输入 / User input
-            
+            user_input: 用户输入
+
         Returns:
-            AgentResponse: Agent响应 / Agent response
+            AgentResponse: 智能体响应
         """
         start_time = time.time()
         request_id = generate_request_id()
         total_tokens_used = 0
         
-        logger.info(f"开始处理请求 / Starting request: {request_id}")
-        logger.debug(f"用户输入 / User input: {user_input}")
+        logger.info(f"开始处理请求: {request_id}")
+        logger.debug(f"用户输入: {user_input}")
         
-        # 重置状态 / Reset state
+        # 重置状态
         self.state = AgentState.THINKING
         self.current_step = 0
         self.steps = []
         
-        # 添加用户消息到记忆 / Add user message to memory
+        # 添加用户消息到记忆
         self.memory.add_user_message(user_input)
         
         try:
-            # Agent循环 / Agent loop
+            # 智能体循环
             while self.current_step < self.config.agent.max_iterations:
                 self.current_step += 1
                 
-                logger.info(f"迭代 / Iteration {self.current_step}/{self.config.agent.max_iterations}")
+                logger.info(f"迭代 {self.current_step}/{self.config.agent.max_iterations}")
                 
-                # 刷新系统消息与上下文 / Refresh system message and context
+                # 刷新系统消息与上下文
                 self._refresh_system_message()
-                # 获取对话历史 / Get conversation history
+                # 获取对话历史
                 messages = self.memory.get_openai_messages()
                 
-                # 如果开启显式上下文模式，打印当前上下文 / Print context if verbose mode enabled
+                # 如果开启显式上下文模式，打印当前上下文
                 if self.verbose_context:
                     self._print_current_context(messages)
                 
-                # 调用LLM / Call LLM
+                # 调用模型
                 self.state = AgentState.THINKING
                 self._emit_ui_event("llm_start", iteration=self.current_step)
                 try:
@@ -781,48 +764,46 @@ You can create, modify and manage files in the workspace. For important intermed
                 finally:
                     self._emit_ui_event("llm_end", iteration=self.current_step)
                 
-                # 解析响应 / Parse response
+                # 解析响应
                 # 保护性检查响应是否为空或格式异常
                 if not response or not hasattr(response, 'choices') or not response.choices:
-                    logger.error("LLM 响应无效或为空 / Invalid or empty LLM response")
+                    logger.error("LLM 响应无效或为空")
                     self.memory.add_assistant_message("[系统] LLM 响应无效或为空。")
-                    return AgentResponse(success=False, final_answer="LLM 响应无效或为空。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message="Invalid LLM response")
+                    return AgentResponse(success=False, final_answer="LLM 响应无效或为空。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message="LLM 响应无效或为空")
                 
                 choice = response.choices[0]
                 message = choice.message
                 total_tokens_used += self._extract_token_usage(response)
                 
-                # 提取 thinking（Extended Thinking）/ Extract thinking
+                # 提取思考内容
                 content = getattr(message, 'content', None) or getattr(message, 'text', '') or ""
                 thinking_text = self._extract_thinking(content)
                 
-                # 创建步骤记录 / Create step record
+                # 创建步骤记录
                 step = AgentStep(
                     step_number=self.current_step,
                     thinking=thinking_text
                 )
                 self.steps.append(step)
                 
-                # 如果有 thinking，记录到日志 / Log thinking if present
+                # 如果有思考内容，记录到日志
                 if thinking_text:
-                    logger.info(f"💭 Thinking: {thinking_text[:200]}..." if len(thinking_text) > 200 else f"💭 Thinking: {thinking_text}")
+                    logger.info(f"思考: {thinking_text[:200]}..." if len(thinking_text) > 200 else f"思考: {thinking_text}")
                     self._emit_ui_event(
                         "thinking",
                         thinking=thinking_text,
                         step=self.current_step
                     )
                 
-                # 检查是否有工具调用 / Check for tool calls
+                # 检查是否有工具调用
                 if message.tool_calls:
                     self.state = AgentState.EXECUTING
                     
-                    # 处理工具调用 / Process tool calls
+                    # 处理工具调用
                     tool_results = self._process_tool_calls(message.tool_calls)
                     
                     # 将助手消息添加到记忆（包含工具调用）
-                    # Add assistant message to memory (including tool calls)
-                    # 需要将tool_calls也添加到消息中，以便Kimi API能识别
-                    # Must include tool_calls so Kimi API can recognize them
+                    # 需要将工具调用也添加到消息中，便于接口识别
                     tool_calls_data = []
                     for tool_call in message.tool_calls:
                         tool_calls_data.append({
@@ -839,7 +820,7 @@ You can create, modify and manage files in the workspace. For important intermed
                         metadata={"tool_calls": tool_calls_data} if tool_calls_data else None
                     )
                     
-                    # 将工具结果添加到记忆 / Add tool results to memory
+                    # 将工具结果添加到记忆
                     for i, tool_call in enumerate(message.tool_calls):
                         result = tool_results[i]
                         arguments = {}
@@ -849,36 +830,29 @@ You can create, modify and manage files in the workspace. For important intermed
                         result_text = format_tool_result(result.output)
 
                         # 对搜索结果进行精炼后再存入上下文
-                        # Refine search results before storing in context
-                        # 原始结果格式：title/url/body/button
-                        # 精炼后格式：title/url/abstract/key_content
+                        # 原始结果字段：标题、链接、正文、按钮
+                        # 精炼后字段：标题、链接、摘要、关键内容
                         if tool_call.function.name == "web_search" and is_search_result(result_text):
                             result_text = refine_search_result(result_text)
-                            logger.debug("搜索结果已精炼 / Search result refined for context")
+                            logger.debug("搜索结果已精炼")
 
-                        # 添加工具响应消息，必须包含tool_call_id（Kimi API 要求）
-                        # Add tool response message with required tool_call_id (Kimi API requirement)
+                        # 添加工具响应消息，必须包含工具调用标识（接口要求）
                         metadata = {"tool_name": tool_call.function.name}
                         
-                        # 确保总是有tool_call_id（Kimi API强制要求）
-                        # Always ensure tool_call_id is present (Kimi API requirement)
+                        # 确保总是有工具调用标识（接口强制要求）
                         call_id = None
                         
-                        # 首先尝试使用我们维护的tool_call_id映射
-                        # First try to use our maintained tool_call_id mapping
+                        # 首先尝试使用我们维护的工具调用标识映射
                         if hasattr(self, "_tool_call_ids") and i in self._tool_call_ids:
                             call_id = self._tool_call_ids[i]
-                        # 其次尝试使用原始工具调用ID
-                        # Otherwise use original tool call ID
+                        # 其次尝试使用原始工具调用标识
                         elif hasattr(tool_call, "id") and tool_call.id:
                             call_id = str(tool_call.id).strip()
-                        # 最后生成一个备选ID（以防万一）
-                        # Last resort: generate a fallback ID
+                        # 最后生成一个备选标识（以防万一）
                         else:
                             call_id = f"call_{tool_call.function.name}_{i}"
                         
                         # 添加到元数据（确保不为空）
-                        # Add to metadata (ensure not empty)
                         if call_id:
                             metadata["tool_call_id"] = call_id
 
@@ -896,17 +870,17 @@ You can create, modify and manage files in the workspace. For important intermed
                             metadata=metadata
                         )
                 else:
-                    # 没有工具调用，任务完成 / No tool calls, task completed
+                    # 没有工具调用，任务完成
                     self.state = AgentState.COMPLETED
                     
-                    # 添加最终响应到记忆 / Add final response to memory
+                    # 添加最终响应到记忆
                     final_answer = self._strip_thinking_tags(message.content or "")
                     self.memory.add_assistant_message(final_answer)
                     step.response = final_answer
                     
                     execution_time = time.time() - start_time
                     
-                    logger.info(f"任务完成 / Task completed in {execution_time:.2f}s, {self.current_step} iterations")
+                    logger.info(f"任务完成，耗时 {execution_time:.2f}s，迭代 {self.current_step} 次")
                     
                     return AgentResponse(
                         success=True,
@@ -917,31 +891,31 @@ You can create, modify and manage files in the workspace. For important intermed
                         execution_time=execution_time
                     )
             
-            # 达到最大迭代次数 / Reached max iterations
+            # 达到最大迭代次数
             self.state = AgentState.STOPPED
             execution_time = time.time() - start_time
             
-            logger.warning(f"达到最大迭代次数 / Reached max iterations: {self.config.agent.max_iterations}")
+            logger.warning(f"达到最大迭代次数: {self.config.agent.max_iterations}")
             
             return AgentResponse(
                 success=False,
-                final_answer="达到最大迭代次数，任务未完成。/ Reached max iterations, task not completed.",
+                final_answer="达到最大迭代次数，任务未完成。",
                 steps=self.steps,
                 total_iterations=self.current_step,
                 total_tokens_used=total_tokens_used,
                 execution_time=execution_time,
-                error_message="Max iterations reached"
+                error_message="达到最大迭代次数"
             )
             
         except Exception as e:
             self.state = AgentState.ERROR
             execution_time = time.time() - start_time
             
-            logger.error(f"Agent执行出错 / Agent execution error: {str(e)}")
+            logger.error(f"智能体执行出错: {str(e)}")
             
             return AgentResponse(
                 success=False,
-                final_answer=f"执行过程中发生错误 / Error during execution: {str(e)}",
+                final_answer=f"执行过程中发生错误: {str(e)}",
                 steps=self.steps,
                 total_iterations=self.current_step,
                 total_tokens_used=total_tokens_used,
@@ -951,24 +925,23 @@ You can create, modify and manage files in the workspace. For important intermed
     
     async def arun(self, user_input: str) -> AgentResponse:
         """
-        异步运行Agent / Run Agent asynchronously
-        
+        异步运行智能体
+
         Args:
-            user_input: 用户输入 / User input
-            
+            user_input: 用户输入
+
         Returns:
-            AgentResponse: Agent响应 / Agent response
+            AgentResponse: 智能体响应
         """
         # 目前简单地调用同步方法，未来可以实现真正的异步
-        # Currently just calls sync method, can implement true async in the future
         return self.run(user_input)
     
     def add_tool(self, tool: Union[BaseTool, Type[BaseTool]]) -> None:
         """
-        添加工具 / Add tool
-        
+        添加工具
+
         Args:
-            tool: 工具实例或类 / Tool instance or class
+            tool: 工具实例或类
         """
         if isinstance(tool, type):
             tool_instance = tool()
@@ -976,33 +949,31 @@ You can create, modify and manage files in the workspace. For important intermed
             tool_instance = tool
         
         self.tools[tool_instance.name] = tool_instance
-        logger.info(f"添加工具 / Added tool: {tool_instance.name}")
-        
-        # 更新系统提示词 / Update system prompt
+        logger.info(f"添加工具: {tool_instance.name}")
+
+        # 更新系统提示词
         self.base_system_prompt = get_system_prompt(
-            tools=list(self.tools.values()),
-            language=self.config.agent.prompt_language
+            tools=list(self.tools.values())
         )
         self._refresh_system_message()
     
     def remove_tool(self, tool_name: str) -> bool:
         """
-        移除工具 / Remove tool
-        
+        移除工具
+
         Args:
-            tool_name: 工具名称 / Tool name
-            
+            tool_name: 工具名称
+
         Returns:
-            bool: 是否成功移除 / Whether removal was successful
+            bool: 是否成功移除
         """
         if tool_name in self.tools:
             del self.tools[tool_name]
-            logger.info(f"移除工具 / Removed tool: {tool_name}")
-            
-            # 更新系统提示词 / Update system prompt
+            logger.info(f"移除工具: {tool_name}")
+
+            # 更新系统提示词
             self.base_system_prompt = get_system_prompt(
-                tools=list(self.tools.values()),
-                language=self.config.agent.prompt_language
+                tools=list(self.tools.values())
             )
             self._refresh_system_message()
             return True
@@ -1010,20 +981,20 @@ You can create, modify and manage files in the workspace. For important intermed
         return False
     
     def reset(self) -> None:
-        """重置Agent状态 / Reset Agent state"""
+        """重置Agent状态"""
         self.state = AgentState.IDLE
         self.current_step = 0
         self.steps = []
         self.memory.clear(keep_system=True)
         
-        logger.info("Agent状态已重置 / Agent state reset")
+        logger.info("智能体状态已重置")
     
     def get_status(self) -> Dict[str, Any]:
         """
-        获取Agent状态 / Get Agent status
-        
+        获取Agent状态
+
         Returns:
-            Dict: 状态信息 / Status information
+            Dict: 状态信息
         """
         return {
             "state": self.state.value,
@@ -1037,7 +1008,7 @@ You can create, modify and manage files in the workspace. For important intermed
         }
     
     # ==============================================================================
-    # 文件上下文管理方法 / File Context Management Methods
+    # 文件上下文管理方法
     # ==============================================================================
     
     def add_file_to_context(
@@ -1048,16 +1019,16 @@ You can create, modify and manage files in the workspace. For important intermed
         metadata: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        将文件添加到对话上下文 / Add file to conversation context
-        
+        将文件添加到对话上下文
+
         Args:
-            path: 文件路径（相对或绝对）/ File path (relative or absolute)
-            content: 文件内容 / File content
-            abstract: 文件摘要 / File abstract
-            metadata: 额外元数据 / Extra metadata
+            path: 文件路径（相对或绝对）
+            content: 文件内容
+            abstract: 文件摘要
+            metadata: 额外元数据
         """
         self.memory.add_file(path, content, abstract, metadata)
-        logger.info(f"文件已添加到上下文 / File added to context: {path}")
+        logger.info(f"文件已添加到上下文: {path}")
     
     def update_file_in_context(
         self,
@@ -1067,119 +1038,120 @@ You can create, modify and manage files in the workspace. For important intermed
         metadata: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
-        更新上下文中的文件 / Update file in context
-        
+        更新上下文中的文件
+
         Args:
-            path: 文件路径 / File path
-            content: 新内容 / New content
-            abstract: 新摘要 / New abstract
-            metadata: 新元数据 / New metadata
-            
+            path: 文件路径
+            content: 新内容
+            abstract: 新摘要
+            metadata: 新元数据
+
         Returns:
-            bool: 是否成功更新 / Whether update was successful
+            bool: 是否成功更新
         """
         result = self.memory.update_file(path, content, abstract, metadata)
         if result:
-            logger.info(f"文件已更新 / File updated: {path}")
+            logger.info(f"文件已更新: {path}")
             return True
         else:
-            logger.warning(f"文件不存在，无法更新 / File does not exist, cannot update: {path}")
+            logger.warning(f"文件不存在，无法更新: {path}")
             return False
     
     def remove_file_from_context(self, path: str) -> bool:
         """
-        从上下文中移除文件 / Remove file from context
-        
+        从上下文中移除文件
+
         Args:
-            path: 文件路径 / File path
-            
+            path: 文件路径
+
         Returns:
-            bool: 是否成功移除 / Whether removal was successful
+            bool: 是否成功移除
         """
         result = self.memory.remove_file(path)
         if result:
-            logger.info(f"文件已从上下文移除 / File removed from context: {path}")
+            logger.info(f"文件已从上下文移除: {path}")
             return True
         else:
-            logger.warning(f"文件不存在，无法移除 / File does not exist, cannot remove: {path}")
+            logger.warning(f"文件不存在，无法移除: {path}")
             return False
     
     def list_context_files(self) -> List[str]:
         """
-        列出上下文中的所有文件路径 / List all file paths in context
-        
+        列出上下文中的所有文件路径
+
         Returns:
-            List[str]: 文件路径列表 / List of file paths
+            List[str]: 文件路径列表
         """
         return [f.path for f in self.memory.list_files()]
     
     def get_files_summary(self) -> str:
         """
-        获取文件上下文摘要 / Get files context summary
-        
+        获取文件上下文摘要
+
         Returns:
-            str: 文件摘要 / Files summary
+            str: 文件摘要
         """
         return self.memory.get_files_summary()
     
     # ==============================================================================
-    # 显式上下文模式方法 / Verbose Context Mode Methods
+    # 显式上下文模式方法
     # ==============================================================================
     
     def toggle_verbose_context(self) -> bool:
         """
-        切换显式上下文模式 / Toggle verbose context mode
-        
+        切换显式上下文模式
+
         Returns:
-            bool: 当前状态 / Current state
+            bool: 当前状态
         """
         self.verbose_context = not self.verbose_context
-        logger.info(f"显式上下文模式 / Verbose context mode: {'开启 / ON' if self.verbose_context else '关闭 / OFF'}")
+        logger.info(f"显式上下文模式: {'开启' if self.verbose_context else '关闭'}")
         return self.verbose_context
     
     def _print_current_context(self, messages: List[Dict]) -> None:
         """
-        打印当前传入LLM的上下文 / Print current context sent to LLM
-        
+        打印当前传入LLM的上下文
+
         Args:
-            messages: 消息列表 / Message list
+            messages: 消息列表
         """
-        print("\n" + "="*80)
-        print("📋 当前上下文 / Current Context")
-        print("="*80)
-        
+        print("
+" + "=" * 80)
+        print("当前上下文")
+        print("=" * 80)
+
         for i, msg in enumerate(messages, 1):
             role = msg.get("role", "unknown")
             content = msg.get("content", "")
-            
+
             role_display = {
-                "system": "⚙️  系统 / System",
-                "user": "👤 用户 / User",
-                "assistant": "🤖 助手 / Assistant",
-                "tool": "🔧 工具 / Tool"
-            }.get(role, f"❓ {role}")
-            
-            print(f"\n[{i}] {role_display}")
+                "system": "系统",
+                "user": "用户",
+                "assistant": "助手",
+                "tool": "工具"
+            }.get(role, f"未知角色: {role}")
+
+            print(f"
+[{i}] {role_display}")
             print("-" * 80)
-            
-            # 根据内容长度决定显示方式 / Display based on content length
-            if role == "system" and "📁 当前文件上下文" in content:
-                print(f"📁 文件上下文消息 ({content.count('###')} 个文件)")
+
+            if role == "system" and "## 当前文件上下文" in content:
+                print(f"文件上下文消息（{content.count('###')} 个文件）")
             elif len(content) > 500:
-                print(f"📊 内容长度: {len(content)} 字符")
-                print(f"📝 预览: {content[:200]}...")
+                print(f"内容长度: {len(content)} 字符")
+                print(f"预览: {content[:200]}...")
             else:
                 print(content)
-            
-            # 显示工具调用信息 / Show tool call info
+
             if "tool_calls" in msg:
-                for tc in msg['tool_calls']:
-                    print(f"   🔧 {tc.get('function', {}).get('name', 'unknown')}")
-            
+                for tc in msg["tool_calls"]:
+                    print(f"   工具调用: {tc.get('function', {}).get('name', '未知')}")
+
             if role == "tool" and "name" in msg:
-                print(f"🏷️  工具: {msg['name']}")
-        
-        # 统计信息 / Statistics
+                print(f"工具: {msg['name']}")
+
         total_chars = sum(len(msg.get("content", "")) for msg in messages)
-        print(f"\n📊 消息: {len(messages)} | 字符: {total_chars:,} | Token估计: ~{total_chars // 4:,}")
-        print("="*80 + "\n")
+        print(f"
+消息: {len(messages)} | 字符: {total_chars:,} | Token估计: ~{total_chars // 4:,}")
+        print("=" * 80 + "
+")

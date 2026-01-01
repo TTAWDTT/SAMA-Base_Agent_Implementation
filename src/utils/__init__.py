@@ -1,12 +1,11 @@
 # ==============================================================================
-# 工具函数模块 / Utils Module
+# 工具函数模块
 # ==============================================================================
 
 from src.utils.helpers import (
     truncate_text,
     format_tool_result,
     generate_request_id,
-    extract_json_from_text,
     estimate_tokens,
 )
 from src.utils.document_processor import (
@@ -19,13 +18,12 @@ from src.utils.document_processor import (
 )
 
 __all__ = [
-    # 辅助函数 / Helper functions
+    # 辅助函数
     "truncate_text",
     "format_tool_result",
     "generate_request_id",
-    "extract_json_from_text",
     "estimate_tokens",
-    # 文档处理 / Document processing
+    # 文档处理
     "DocumentConverter",
     "preprocess_files",
     "get_supported_extensions",

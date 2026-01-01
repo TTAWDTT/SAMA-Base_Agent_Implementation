@@ -1,8 +1,7 @@
 # ==============================================================================
-# 日志管理模块 / Logger Management Module
+# 日志管理模块
 # ==============================================================================
 # 提供统一的日志记录功能
-# Provides unified logging functionality
 # ==============================================================================
 
 import sys
@@ -13,7 +12,7 @@ from loguru import logger
 
 from src.core.config import get_config
 
-# 标记是否已初始化 / Flag for initialization status
+# 标记是否已初始化
 _initialized = False
 
 
@@ -35,15 +34,15 @@ def setup_logger(
     """
     config = get_config()
     
-    # 使用参数或配置文件中的值 / Use parameters or values from config file
+    # 使用参数或配置文件中的值
     level = log_level or config.logging.level
     file_path = log_file or config.logging.file_path
     to_console = console_output if console_output is not None else config.logging.console_output
     
-    # 移除默认处理器 / Remove default handlers
+    # 移除默认处理器
     logger.remove()
     
-    # Loguru格式 / Loguru format
+    # Loguru格式
     loguru_format = (
         "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
         "<level>{level: <8}</level> | "
@@ -51,7 +50,7 @@ def setup_logger(
         "<level>{message}</level>"
     )
     
-    # 添加控制台处理器 / Add console handler
+    # 添加控制台处理器
     if to_console:
         logger.add(
             sys.stdout,
@@ -60,7 +59,7 @@ def setup_logger(
             colorize=True
         )
     
-    # 添加文件处理器 / Add file handler
+    # 添加文件处理器
     if file_path:
         log_path = Path(file_path)
         log_path.parent.mkdir(parents=True, exist_ok=True)
