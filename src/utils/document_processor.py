@@ -17,7 +17,10 @@
 import base64
 import csv
 import os
+import re
 import shutil
+import time
+import uuid
 from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -52,6 +55,16 @@ try:
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 try:
     import pptx
@@ -976,6 +989,797 @@ class DocumentConverter:
         if self.output_dir.exists():
             shutil.rmtree(self.output_dir)
             logger.info(f"输出目录已清理 / Output directory cleaned: {self.output_dir}")
+
+
+# ==============================================================================
+# 文档生成
+# ==============================================================================
+
+def _sanitize_filename(name: str, fallback: str = "document") -> str:
+    base = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name or ""))
+    base = base.strip("._-")
+    if not base:
+        base = fallback
+    return base[:64]
+
+def _normalize_document_content(content: str) -> str:
+    """
+    轻量归一化文档内容，提升排版一致性
+    """
+    if not content:
+        return ""
+    text = content.replace("\r\n", "\n").replace("\r", "\n")
+    lines = text.split("\n")
+    output: List[str] = []
+    in_code = False
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            in_code = not in_code
+            output.append(raw.rstrip())
+            continue
+        if in_code:
+            output.append(raw.rstrip("\n"))
+            continue
+        indent_match = re.match(r"^(\s*)", raw)
+        indent = indent_match.group(1) if indent_match else ""
+        body = raw[len(indent):].rstrip()
+        bullet_match = re.match(r"^[•·●▪▶◦]\s*(.+)$", body)
+        if bullet_match:
+            body = f"- {bullet_match.group(1).strip()}"
+            output.append(indent + body)
+            continue
+        number_match = re.match(r"^(\d+)[、\)]\s*(.+)$", body)
+        if number_match:
+            body = f"{number_match.group(1)}. {number_match.group(2).strip()}"
+            output.append(indent + body)
+            continue
+        output.append(indent + body)
+    text = "\n".join(output)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text
+
+
+def _split_table_row(line: str) -> List[str]:
+    trimmed = line.strip().strip("|")
+    if not trimmed:
+        return []
+    return [cell.strip() for cell in trimmed.split("|")]
+
+
+def _is_table_separator(line: str) -> bool:
+    trimmed = line.strip().strip("|")
+    if not trimmed:
+        return False
+    parts = [part.strip() for part in trimmed.split("|")]
+    for part in parts:
+        if not re.match(r"^:?-{3,}:?$", part):
+            return False
+    return True
+
+
+def _is_table_row(line: str) -> bool:
+    return line.count("|") >= 2
+
+
+def _parse_markdown_blocks(content: str) -> List[Dict[str, Any]]:
+    lines = _normalize_document_content(content).split("\n")
+    blocks: List[Dict[str, Any]] = []
+    in_code = False
+    code_lang = ""
+    code_lines: List[str] = []
+    quote_lines: List[str] = []
+    paragraph_lines: List[str] = []
+    table_lines: List[str] = []
+
+    def flush_paragraph() -> None:
+        if not paragraph_lines:
+            return
+        text = " ".join(paragraph_lines).strip()
+        if text:
+            blocks.append({"type": "para", "text": text})
+        paragraph_lines.clear()
+
+    def flush_quote() -> None:
+        if not quote_lines:
+            return
+        text = "\n".join(quote_lines).strip()
+        if text:
+            blocks.append({"type": "quote", "text": text})
+        quote_lines.clear()
+
+    def flush_code() -> None:
+        nonlocal in_code, code_lang
+        if code_lines:
+            blocks.append({"type": "code", "text": "\n".join(code_lines), "lang": code_lang})
+        code_lines.clear()
+        code_lang = ""
+        in_code = False
+
+    def flush_table() -> None:
+        if not table_lines:
+            return
+        rows = [_split_table_row(row) for row in table_lines if not _is_table_separator(row)]
+        header = None
+        if len(table_lines) > 1 and _is_table_separator(table_lines[1]):
+            header = rows[0] if rows else None
+            rows = rows[1:] if len(rows) > 1 else []
+        if rows or header:
+            blocks.append({"type": "table", "header": header, "rows": rows})
+        table_lines.clear()
+
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped.startswith("```"):
+            flush_paragraph()
+            flush_quote()
+            flush_table()
+            if in_code:
+                flush_code()
+            else:
+                in_code = True
+                code_lang = stripped[3:].strip()
+            continue
+        if in_code:
+            code_lines.append(raw.rstrip("\n"))
+            continue
+        if _is_table_row(raw):
+            flush_paragraph()
+            flush_quote()
+            table_lines.append(raw)
+            continue
+        if table_lines:
+            flush_table()
+        if stripped.startswith(">"):
+            flush_paragraph()
+            quote_lines.append(stripped.lstrip(">").strip())
+            continue
+        if quote_lines:
+            flush_quote()
+        if stripped and re.match(r"^(-{3,}|\*{3,}|_{3,})$", stripped):
+            flush_paragraph()
+            blocks.append({"type": "hr"})
+            continue
+        if not stripped:
+            flush_paragraph()
+            blocks.append({"type": "blank", "text": ""})
+            continue
+        if stripped.startswith("#"):
+            flush_paragraph()
+            level = len(stripped) - len(stripped.lstrip("#"))
+            text = stripped[level:].strip() or "Untitled"
+            blocks.append({"type": "heading", "level": min(level, 3), "text": text})
+            continue
+        bullet_match = re.match(r"^[-*]\s+(.*)$", stripped)
+        if bullet_match:
+            flush_paragraph()
+            blocks.append({"type": "bullet", "text": bullet_match.group(1).strip(), "marker": "-"})
+            continue
+        number_match = re.match(r"^(\d+)\.\s+(.*)$", stripped)
+        if number_match:
+            flush_paragraph()
+            blocks.append({
+                "type": "number",
+                "text": number_match.group(2).strip(),
+                "marker": number_match.group(1),
+            })
+            continue
+        paragraph_lines.append(stripped)
+
+    if in_code:
+        flush_code()
+    if quote_lines:
+        flush_quote()
+    if table_lines:
+        flush_table()
+    if paragraph_lines:
+        flush_paragraph()
+    return blocks
+
+
+def _split_reportlab_word(word: str, font_name: str, font_size: int, max_width: float) -> List[str]:
+    if not word:
+        return []
+    current = ""
+    parts = []
+    for char in word:
+        if pdfmetrics.stringWidth(current + char, font_name, font_size) <= max_width:
+            current += char
+        else:
+            if current:
+                parts.append(current)
+            current = char
+    if current:
+        parts.append(current)
+    return parts
+
+
+def _wrap_reportlab_text(text: str, font_name: str, font_size: int, max_width: float) -> List[str]:
+    words = text.split()
+    if not words:
+        return [""]
+    lines = []
+    current = ""
+    for word in words:
+        chunks = _split_reportlab_word(word, font_name, font_size, max_width)
+        for chunk in chunks:
+            if not current:
+                current = chunk
+                continue
+            trial = f"{current} {chunk}"
+            if pdfmetrics.stringWidth(trial, font_name, font_size) <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = chunk
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _wrap_reportlab_preformatted(text: str, font_name: str, font_size: int, max_width: float) -> List[str]:
+    if text is None:
+        return [""]
+    lines: List[str] = []
+    raw_lines = text.splitlines() or [""]
+    for raw in raw_lines:
+        current = ""
+        for char in raw:
+            if pdfmetrics.stringWidth(current + char, font_name, font_size) <= max_width:
+                current += char
+            else:
+                lines.append(current)
+                current = char
+        lines.append(current)
+    return lines
+
+
+def _pick_reportlab_font(content: str) -> str:
+    """
+    尝试选择支持更多字符集的字体
+    """
+    if not REPORTLAB_AVAILABLE:
+        return "Helvetica"
+    text = content or ""
+    if not any(ord(ch) > 127 for ch in text):
+        return "Helvetica"
+    font_dir = os.environ.get("WINDIR", "C:\\Windows")
+    font_dir = os.path.join(font_dir, "Fonts")
+    candidates = [
+        ("SamaHei", os.path.join(font_dir, "simhei.ttf")),
+        ("SamaFang", os.path.join(font_dir, "simfang.ttf")),
+        ("SamaKai", os.path.join(font_dir, "simkai.ttf")),
+    ]
+    registered = set(pdfmetrics.getRegisteredFontNames())
+    for name, path in candidates:
+        if not os.path.exists(path):
+            continue
+        if name in registered:
+            return name
+        try:
+            pdfmetrics.registerFont(TTFont(name, path))
+            return name
+        except Exception:
+            continue
+    return "Helvetica"
+
+
+def _generate_pdf_reportlab(content: str, output_path: Path, title: Optional[str]) -> None:
+    canvas_obj = canvas.Canvas(str(output_path), pagesize=A4)
+    page_width, page_height = A4
+    margin = 54
+    base_size = 11
+    line_gap = 4
+    paragraph_gap = 6
+    font_name = _pick_reportlab_font(content)
+    code_font = "Courier"
+    y = page_height - margin
+
+    def new_page() -> None:
+        nonlocal y
+        canvas_obj.showPage()
+        canvas_obj.setFont(font_name, base_size)
+        y = page_height - margin
+
+    def ensure_space(height: float) -> None:
+        nonlocal y
+        if y - height < margin:
+            new_page()
+
+    blocks = _parse_markdown_blocks(content)
+    if title:
+        blocks.insert(0, {"type": "heading", "level": 1, "text": title})
+        blocks.insert(1, {"type": "blank", "text": ""})
+
+    for block in blocks:
+        block_type = block.get("type")
+        if block_type == "blank":
+            y -= base_size + line_gap
+            if y < margin:
+                new_page()
+            continue
+        if block_type == "heading":
+            level = int(block.get("level") or 1)
+            size = 16 - (level - 1) * 2
+            size = max(size, 12)
+            canvas_obj.setFont(font_name, size)
+            lines = _wrap_reportlab_text(block.get("text", ""), font_name, size, page_width - margin * 2)
+            for line in lines:
+                if y < margin + size:
+                    new_page()
+                canvas_obj.drawString(margin, y, line)
+                y -= size + line_gap
+            y -= line_gap
+            canvas_obj.setFont(font_name, base_size)
+            continue
+        if block_type == "hr":
+            if y < margin + base_size:
+                new_page()
+            canvas_obj.setLineWidth(1)
+            canvas_obj.line(margin, y, page_width - margin, y)
+            y -= base_size + line_gap
+            continue
+        if block_type == "quote":
+            quote_indent = 16
+            lines = _wrap_reportlab_text(block.get("text", ""), font_name, base_size, page_width - margin * 2 - quote_indent)
+            canvas_obj.setFont(font_name, base_size)
+            y_start = y
+            for line in lines:
+                if y < margin + base_size:
+                    new_page()
+                    canvas_obj.setFont(font_name, base_size)
+                canvas_obj.drawString(margin + quote_indent, y, line)
+                y -= base_size + line_gap
+            y_end = y + line_gap
+            canvas_obj.setStrokeColor(colors.grey)
+            canvas_obj.setLineWidth(1)
+            canvas_obj.line(margin + 4, y_start, margin + 4, y_end)
+            canvas_obj.setStrokeColor(colors.black)
+            canvas_obj.setFont(font_name, base_size)
+            y -= paragraph_gap
+            continue
+        if block_type == "code":
+            code_indent = 12
+            lines = _wrap_reportlab_preformatted(
+                block.get("text", ""),
+                code_font,
+                base_size,
+                page_width - margin * 2 - code_indent,
+            )
+            line_height = base_size + line_gap
+            block_height = max(1, len(lines)) * line_height + 8
+            ensure_space(block_height)
+            canvas_obj.setFillColor(colors.whitesmoke)
+            canvas_obj.rect(margin, y - block_height, page_width - margin * 2, block_height, fill=1, stroke=0)
+            canvas_obj.setFillColor(colors.black)
+            canvas_obj.setFont(code_font, base_size)
+            text_y = y - 6 - base_size
+            for line in lines:
+                canvas_obj.drawString(margin + code_indent, text_y, line)
+                text_y -= line_height
+            y -= block_height
+            canvas_obj.setFont(font_name, base_size)
+            y -= paragraph_gap
+            continue
+        if block_type == "table":
+            header = block.get("header") or []
+            rows = block.get("rows") or []
+            table_rows = [header] + rows if header else rows
+            if not table_rows:
+                continue
+            col_count = max(len(row) for row in table_rows) if table_rows else 0
+            if col_count <= 0:
+                continue
+            col_width = (page_width - margin * 2) / col_count
+            line_height = base_size + line_gap
+            for row_index, row in enumerate(table_rows):
+                cells = list(row) + [""] * (col_count - len(row))
+                wrapped = [
+                    _wrap_reportlab_text(cell, font_name, base_size, col_width - 8)
+                    for cell in cells
+                ]
+                row_height = max(len(lines) for lines in wrapped) * line_height + 8
+                ensure_space(row_height)
+                if header and row_index == 0:
+                    canvas_obj.setFillColor(colors.lightgrey)
+                    canvas_obj.rect(margin, y - row_height, page_width - margin * 2, row_height, fill=1, stroke=0)
+                    canvas_obj.setFillColor(colors.black)
+                for col_index, lines in enumerate(wrapped):
+                    cell_x = margin + col_index * col_width
+                    canvas_obj.rect(cell_x, y - row_height, col_width, row_height, stroke=1, fill=0)
+                    text_y = y - 6 - base_size
+                    for line in lines:
+                        canvas_obj.drawString(cell_x + 4, text_y, line)
+                        text_y -= line_height
+                y -= row_height
+            y -= paragraph_gap
+            continue
+        if block_type in {"bullet", "number"}:
+            marker = block.get("marker") or "-"
+            prefix = f"{marker} "
+            text = prefix + block.get("text", "")
+            indent = 10
+        else:
+            text = block.get("text", "")
+            indent = 0
+        canvas_obj.setFont(font_name, base_size)
+        lines = _wrap_reportlab_text(text, font_name, base_size, page_width - margin * 2 - indent)
+        for line in lines:
+            if y < margin + base_size:
+                new_page()
+            canvas_obj.drawString(margin + indent, y, line)
+            y -= base_size + line_gap
+        y -= paragraph_gap
+
+    canvas_obj.save()
+
+
+def _split_fitz_word(word: str, font: "fitz.Font", font_size: int, max_width: float) -> List[str]:
+    if not word:
+        return []
+    current = ""
+    parts = []
+    for char in word:
+        if font.text_length(current + char, font_size) <= max_width:
+            current += char
+        else:
+            if current:
+                parts.append(current)
+            current = char
+    if current:
+        parts.append(current)
+    return parts
+
+
+def _wrap_fitz_text(text: str, font: "fitz.Font", font_size: int, max_width: float) -> List[str]:
+    words = text.split()
+    if not words:
+        return [""]
+    lines = []
+    current = ""
+    for word in words:
+        chunks = _split_fitz_word(word, font, font_size, max_width)
+        for chunk in chunks:
+            if not current:
+                current = chunk
+                continue
+            trial = f"{current} {chunk}"
+            if font.text_length(trial, font_size) <= max_width:
+                current = trial
+            else:
+                lines.append(current)
+                current = chunk
+    if current:
+        lines.append(current)
+    return lines
+
+
+def _wrap_fitz_preformatted(text: str, font: "fitz.Font", font_size: int, max_width: float) -> List[str]:
+    if text is None:
+        return [""]
+    lines: List[str] = []
+    raw_lines = text.splitlines() or [""]
+    for raw in raw_lines:
+        current = ""
+        for char in raw:
+            if font.text_length(current + char, font_size) <= max_width:
+                current += char
+            else:
+                lines.append(current)
+                current = char
+        lines.append(current)
+    return lines
+
+
+def _pick_fitz_font(content: str) -> "fitz.Font":
+    """
+    尝试为 PyMuPDF 选择支持更多字符集的字体
+    """
+    if not FITZ_AVAILABLE:
+        return fitz.Font("helv")
+    text = content or ""
+    if not any(ord(ch) > 127 for ch in text):
+        return fitz.Font("helv")
+    font_dir = os.environ.get("WINDIR", "C:\\Windows")
+    font_dir = os.path.join(font_dir, "Fonts")
+    candidates = [
+        os.path.join(font_dir, "simhei.ttf"),
+        os.path.join(font_dir, "simsun.ttc"),
+        os.path.join(font_dir, "msyh.ttc"),
+    ]
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            return fitz.Font(fontfile=path)
+        except Exception:
+            continue
+    return fitz.Font("helv")
+
+
+def _generate_pdf_fitz(content: str, output_path: Path, title: Optional[str]) -> None:
+    page_width = 595
+    page_height = 842
+    margin = 54
+    base_size = 11
+    line_gap = 4
+    paragraph_gap = 6
+    font = _pick_fitz_font(content)
+    mono_font = fitz.Font("cour")
+    doc = fitz.open()
+    page = doc.new_page(width=page_width, height=page_height)
+    y = margin
+
+    def new_page() -> None:
+        nonlocal page, y
+        page = doc.new_page(width=page_width, height=page_height)
+        y = margin
+
+    blocks = _parse_markdown_blocks(content)
+    if title:
+        blocks.insert(0, {"type": "heading", "level": 1, "text": title})
+        blocks.insert(1, {"type": "blank", "text": ""})
+
+    for block in blocks:
+        block_type = block.get("type")
+        if block_type == "blank":
+            y += base_size + line_gap
+            if y > page_height - margin:
+                new_page()
+            continue
+        if block_type == "heading":
+            level = int(block.get("level") or 1)
+            size = 16 - (level - 1) * 2
+            size = max(size, 12)
+            lines = _wrap_fitz_text(block.get("text", ""), font, size, page_width - margin * 2)
+            for line in lines:
+                if y > page_height - margin:
+                    new_page()
+                page.insert_text((margin, y), line, fontsize=size, fontname=font.name)
+                y += size + line_gap
+            y += line_gap
+            continue
+        if block_type == "hr":
+            if y > page_height - margin:
+                new_page()
+            page.draw_line((margin, y), (page_width - margin, y), width=1)
+            y += base_size + line_gap
+            continue
+        if block_type == "quote":
+            quote_indent = 16
+            lines = _wrap_fitz_text(block.get("text", ""), font, base_size, page_width - margin * 2 - quote_indent)
+            block_height = max(1, len(lines)) * (base_size + line_gap)
+            if y + block_height > page_height - margin:
+                new_page()
+            page.draw_line((margin + 4, y), (margin + 4, y + block_height - line_gap), color=(0.5, 0.5, 0.5), width=1)
+            for line in lines:
+                if y > page_height - margin:
+                    new_page()
+                page.insert_text((margin + quote_indent, y), line, fontsize=base_size, fontname=font.name)
+                y += base_size + line_gap
+            y += paragraph_gap
+            continue
+        if block_type == "code":
+            code_indent = 12
+            lines = _wrap_fitz_preformatted(block.get("text", ""), mono_font, base_size, page_width - margin * 2 - code_indent)
+            block_height = max(1, len(lines)) * (base_size + line_gap) + 8
+            if y + block_height > page_height - margin:
+                new_page()
+            rect = fitz.Rect(margin, y - 4, page_width - margin, y + block_height - 4)
+            page.draw_rect(rect, color=None, fill=(0.95, 0.95, 0.95))
+            for line in lines:
+                if y > page_height - margin:
+                    new_page()
+                page.insert_text((margin + code_indent, y), line, fontsize=base_size, fontname="cour")
+                y += base_size + line_gap
+            y += paragraph_gap
+            continue
+        if block_type == "table":
+            header = block.get("header") or []
+            rows = block.get("rows") or []
+            table_rows = [header] + rows if header else rows
+            if not table_rows:
+                continue
+            for row_index, row in enumerate(table_rows):
+                line = " | ".join([cell for cell in row if cell is not None])
+                lines = _wrap_fitz_text(line, font, base_size, page_width - margin * 2)
+                for text in lines:
+                    if y > page_height - margin:
+                        new_page()
+                    page.insert_text((margin, y), text, fontsize=base_size, fontname=font.name)
+                    y += base_size + line_gap
+                if header and row_index == 0:
+                    page.draw_line((margin, y), (page_width - margin, y), width=1)
+                    y += line_gap
+            y += paragraph_gap
+            continue
+        if block_type in {"bullet", "number"}:
+            marker = block.get("marker") or "-"
+            prefix = f"{marker} "
+            text = prefix + block.get("text", "")
+            indent = 10
+        else:
+            text = block.get("text", "")
+            indent = 0
+        lines = _wrap_fitz_text(text, font, base_size, page_width - margin * 2 - indent)
+        for line in lines:
+            if y > page_height - margin:
+                new_page()
+            page.insert_text((margin + indent, y), line, fontsize=base_size, fontname=font.name)
+            y += base_size + line_gap
+        y += paragraph_gap
+
+    doc.save(str(output_path))
+    doc.close()
+
+
+def generate_docx(content: str, output_path: Path, title: Optional[str] = None) -> None:
+    if not DOCX_AVAILABLE:
+        raise ImportError("python-docx not installed. Run: pip install python-docx")
+    from docx.shared import Inches, Pt, RGBColor
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    document = docx.Document()
+    section = document.sections[0]
+    section.top_margin = Inches(1)
+    section.bottom_margin = Inches(1)
+    section.left_margin = Inches(1)
+    section.right_margin = Inches(1)
+    normal_style = document.styles["Normal"]
+    normal_style.font.name = "Calibri"
+    normal_style.font.size = Pt(11)
+    normal_style.paragraph_format.line_spacing = 1.2
+    normal_style.paragraph_format.space_after = Pt(6)
+
+    def set_run_font(run, font_name: str, font_size: int, bold: bool = False, italic: bool = False) -> None:
+        run.font.name = font_name
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        run.font.italic = italic
+        rpr = run._element.rPr
+        if rpr is None:
+            rpr = OxmlElement("w:rPr")
+            run._element.append(rpr)
+        r_fonts = rpr.find(qn("w:rFonts"))
+        if r_fonts is None:
+            r_fonts = OxmlElement("w:rFonts")
+            rpr.append(r_fonts)
+        r_fonts.set(qn("w:ascii"), font_name)
+        r_fonts.set(qn("w:hAnsi"), font_name)
+        r_fonts.set(qn("w:eastAsia"), font_name)
+
+    def set_paragraph_shading(paragraph, fill: str = "F2F2F2") -> None:
+        p = paragraph._p
+        p_pr = p.get_or_add_pPr()
+        shd = OxmlElement("w:shd")
+        shd.set(qn("w:val"), "clear")
+        shd.set(qn("w:color"), "auto")
+        shd.set(qn("w:fill"), fill)
+        p_pr.append(shd)
+
+    def set_paragraph_border(paragraph, color: str = "D0D0D0") -> None:
+        p = paragraph._p
+        p_pr = p.get_or_add_pPr()
+        p_bdr = OxmlElement("w:pBdr")
+        bottom = OxmlElement("w:bottom")
+        bottom.set(qn("w:val"), "single")
+        bottom.set(qn("w:sz"), "6")
+        bottom.set(qn("w:space"), "4")
+        bottom.set(qn("w:color"), color)
+        p_bdr.append(bottom)
+        p_pr.append(p_bdr)
+
+    if title:
+        document.core_properties.title = title
+        heading = document.add_heading(title, level=1)
+        heading.paragraph_format.space_after = Pt(10)
+    for block in _parse_markdown_blocks(content):
+        block_type = block.get("type")
+        if block_type == "heading":
+            paragraph = document.add_heading(block.get("text", ""), level=int(block.get("level") or 1))
+            paragraph.paragraph_format.space_before = Pt(12)
+            paragraph.paragraph_format.space_after = Pt(6)
+        elif block_type == "bullet":
+            paragraph = document.add_paragraph(block.get("text", ""), style="List Bullet")
+            paragraph.paragraph_format.space_after = Pt(2)
+        elif block_type == "number":
+            paragraph = document.add_paragraph(block.get("text", ""), style="List Number")
+            paragraph.paragraph_format.space_after = Pt(2)
+        elif block_type == "quote":
+            paragraph = document.add_paragraph(block.get("text", ""))
+            try:
+                paragraph.style = "Intense Quote"
+            except (KeyError, ValueError):
+                paragraph.paragraph_format.left_indent = docx.shared.Pt(18)
+                paragraph.paragraph_format.space_after = docx.shared.Pt(6)
+            for run in paragraph.runs:
+                run.font.color.rgb = RGBColor(90, 90, 90)
+                run.font.italic = True
+        elif block_type == "code":
+            paragraph = document.add_paragraph()
+            paragraph.paragraph_format.left_indent = Pt(12)
+            paragraph.paragraph_format.space_after = docx.shared.Pt(6)
+            paragraph.paragraph_format.space_before = docx.shared.Pt(4)
+            set_paragraph_shading(paragraph)
+            lines = (block.get("text", "") or "").splitlines() or [""]
+            for idx, line in enumerate(lines):
+                run = paragraph.add_run(line)
+                set_run_font(run, "Consolas", 10)
+                if idx < len(lines) - 1:
+                    run.add_break()
+        elif block_type == "hr":
+            paragraph = document.add_paragraph("")
+            set_paragraph_border(paragraph)
+        elif block_type == "table":
+            header = block.get("header") or []
+            rows = block.get("rows") or []
+            table_rows = [header] + rows if header else rows
+            if not table_rows:
+                continue
+            col_count = max(len(row) for row in table_rows)
+            table = document.add_table(rows=1, cols=col_count)
+            table.style = "Table Grid"
+            table.autofit = True
+            first_row = table.rows[0].cells
+            header_row = header if header else table_rows[0]
+            for idx, text in enumerate(list(header_row) + [""] * (col_count - len(header_row))):
+                run = first_row[idx].paragraphs[0].add_run(text)
+                run.bold = True if header else False
+            data_rows = rows if header else table_rows[1:]
+            for row in data_rows:
+                cells = list(row) + [""] * (col_count - len(row))
+                row_cells = table.add_row().cells
+                for cell_idx, text in enumerate(cells):
+                    row_cells[cell_idx].text = str(text)
+        elif block_type == "blank":
+            document.add_paragraph("")
+        else:
+            document.add_paragraph(block.get("text", ""))
+    document.save(str(output_path))
+
+
+def generate_pdf(content: str, output_path: Path, title: Optional[str] = None) -> None:
+    if REPORTLAB_AVAILABLE:
+        _generate_pdf_reportlab(content, output_path, title)
+        return
+    if FITZ_AVAILABLE:
+        _generate_pdf_fitz(content, output_path, title)
+        return
+    raise ImportError("reportlab or PyMuPDF not installed. Run: pip install reportlab or pip install PyMuPDF")
+
+
+def generate_document(
+    content: str,
+    doc_type: str,
+    output_dir: str,
+    title: Optional[str] = None,
+    filename: Optional[str] = None
+) -> Dict[str, Any]:
+    if not content:
+        raise ValueError("Content required.")
+    doc_type = str(doc_type or "").lower()
+    if doc_type not in {"pdf", "docx"}:
+        raise ValueError("Unsupported format.")
+    safe_title = title.strip() if isinstance(title, str) else ""
+    base_name = _sanitize_filename(filename or safe_title or "document")
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    task_id = f"doc_{stamp}_{uuid.uuid4().hex[:6]}"
+    output_path = Path(output_dir) / task_id
+    output_path.mkdir(parents=True, exist_ok=True)
+    file_name = f"{base_name}.{doc_type}"
+    file_path = output_path / file_name
+    if doc_type == "docx":
+        generate_docx(content, file_path, safe_title or None)
+    else:
+        generate_pdf(content, file_path, safe_title or None)
+    return {
+        "task_id": task_id,
+        "file_name": file_name,
+        "file_path": str(file_path),
+        "title": safe_title or base_name,
+        "format": doc_type,
+    }
 
 
 # ==============================================================================

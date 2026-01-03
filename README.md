@@ -15,7 +15,15 @@
 - 📂 **文件上下文管理** - 动态管理对话中涉及的文件，支持增删改查（NEW! 🎉）
 - 🏢 **独立工作区** - Agent 专属工作目录，管理中间文件
 - 📊 **详细日志** - 完整的执行过程记录
+- 🚦 **任务队列** - 支持批量任务与断点续跑
+- 🛰️ **任务仪表盘** - 本地Web面板检索与预览产物
+- 🕹️ **赛博像素聊天前端** - 本地网页与 SAMA 实时交互
+- 📈 **工具指标统计** - 记录工具调用次数、耗时与错误率
+- 📦 **产物归档与清理** - 任务产物打包与清理策略
 
+- 🔔 **通知与回调** - 支持Webhook/命令/提示音
+- 📚 **本地知识库** - 索引与检索工作区资料
+- 🧩 **流程编排器** - YAML/JSON工作流编排与执行
 ## 📁 项目结构 / Project Structure
 
 ```
@@ -32,6 +40,27 @@ SAMA-Base_Agent_Implementation/
 │   ├── agents/                    # Agent 实现
 │   │   ├── __init__.py
 │   │   └── base.py               # 基础 Agent
+│   ├── cli/                       # CLI 与交互界面
+│   │   ├── __init__.py
+│   │   ├── entry.py              # CLI 入口逻辑
+│   │   ├── session.py            # 交互会话与渲染
+│   │   ├── commands.py           # 命令路由
+│   │   ├── renderer.py           # 输出渲染
+│   │   └── state.py              # 会话状态
+│   ├── dashboard/                  # 仪表盘模块
+│   │   ├── __init__.py
+│   │   ├── server.py               # 仪表盘服务端
+│   │   └── assets/                 # 前端资源
+│   │       ├── index.html
+│   │       ├── style.css
+│   │       └── app.js
+│   ├── webui/                       # 聊天前端模块
+│   │   ├── __init__.py
+│   │   ├── server.py                # 聊天前端服务端
+│   │   └── assets/                  # 前端资源
+│   │       ├── index.html
+│   │       ├── style.css
+│   │       └── app.js
 │   ├── tools/                     # 工具模块
 │   │   ├── __init__.py
 │   │   ├── base.py               # 工具基类
@@ -47,12 +76,17 @@ SAMA-Base_Agent_Implementation/
 │   │   ├── memory.py             # 对话记忆
 │   │   ├── schema.py             # 数据结构
 │   │   └── prompts.py            # 提示词模板
+│   ├── runtime/                   # 运行时与产物管理
+│   │   ├── __init__.py
+│   │   ├── artifacts.py          # 任务结果与产物处理
+│   │   └── tasks.py              # 任务封装与执行
+│   │   ├── metrics.py            # 工具指标统计
+│   │   └── queue.py              # 任务队列
 │   └── utils/                     # 工具函数
 │       ├── __init__.py
 │       ├── helpers.py
 │       └── document_processor.py
 ├── dataset/                       # 数据集（可选）
-├── scripts/                       # 脚本（可选）
 ├── workspace/                     # Agent 工作区（运行时生成）
 └── outputs/                       # 输出目录（运行时生成）
 ```
@@ -139,6 +173,43 @@ python main.py --help
 | `status` | 查看 Agent 状态 / View Agent status |
 | `files` | 查看文件上下文 / View file context (NEW! 🎉) |
 
+### 任务队列 / Task Queue
+
+```
+/queue add "写一份周报"
+/queue import tasks.jsonl
+/queue run
+/queue status
+```
+
+### 仪表盘 / Dashboard
+
+```
+python main.py --dashboard
+/dashboard
+```
+
+### 聊天前端 / Chat UI
+
+```
+python main.py --chat-ui
+/chatui
+```
+
+### 模板切换 / Profiles
+
+```
+/profile list
+/profile use coder
+```
+
+### 产物管理 / Artifacts
+
+```
+/artifacts archive <task_id>
+/artifacts cleanup 50 30
+```
+
 ### 文件上下文管理 / File Context Management
 
 Agent 支持在对话过程中动态管理文件上下文，适用于需要跨多轮对话引用、更新文件的场景。
@@ -214,6 +285,16 @@ agent = BaseAgent()
 agent.add_tool(MyTool)
 ```
 
+### 任务产物与历史 / Task Artifacts & History
+
+默认会在 `outputs/` 目录生成任务产物与索引：
+
+- `outputs/{task_id}/result.json`：任务执行结果
+- `outputs/{task_id}/answer.txt`：最终回复文本
+- `outputs/task_history.jsonl`：历史任务流水
+- `outputs/task_index.json`：任务索引与产物清单
+- `outputs/workflows/`：工作流图（可在配置中关闭）
+
 ## 🛠️ 内置工具 / Built-in Tools
 
 | 工具 / Tool | 说明 / Description |
@@ -225,6 +306,12 @@ agent.add_tool(MyTool)
 | `todo` | 任务管理 |
 
 ## ⚙️ 配置说明 / Configuration
+
+支持多层配置加载：`config.yaml` + `config.local.yaml` + `config.d/*.yaml`，后者优先级更高。
+
+角色模板可在 `profiles` 配置段或 `profiles/` 目录中定义，并通过 `active_profile` 或 `/profile use <name>` 切换。
+
+
 
 详细配置请参见 `config.yaml` 文件中的注释。
 

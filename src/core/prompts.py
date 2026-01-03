@@ -150,6 +150,13 @@ def get_system_prompt(tools: List) -> str:
     return SYSTEM_PROMPT.format(tools_description=tools_description)
 
 
+def get_tools_description(tools: List) -> str:
+    """
+    获取工具描述文本
+    """
+    return _generate_tools_description(tools)
+
+
 def _generate_tools_description(tools: List) -> str:
     """
     生成工具描述

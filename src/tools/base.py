@@ -45,6 +45,9 @@ class BaseTool(ABC):
 
     # 是否允许子进程隔离执行
     subprocess_safe: bool = False
+
+    # 工具所需权限列表
+    required_permissions: list = []
     
     def __init__(self):
         """初始化工具"""

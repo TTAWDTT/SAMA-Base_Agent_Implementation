@@ -32,6 +32,7 @@ class FileTool(BaseTool):
     
     name: str = "file"
     subprocess_safe: bool = True
+    required_permissions = ["files"]
     
     description: str = """文件操作工具，支持读取、写入、列目录。
 

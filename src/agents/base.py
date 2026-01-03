@@ -13,20 +13,23 @@ import json
 import time
 import re
 import os
+from datetime import datetime
 import concurrent.futures
 import importlib
 import multiprocessing
 import queue as queue_module
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 from openai import OpenAI
 from pydantic import ValidationError
 
-from src.core.config import get_config, Config
+from src.core.config import get_config, Config, find_project_root
 from src.core.logger import get_logger, init_logging
 from src.core.memory import ConversationMemory, get_memory
 from src.core.prompts import get_system_prompt
+from src.core.profiles import resolve_profile, apply_profile_to_agent
 from src.core.schema import (
     AgentState,
     AgentStep,
@@ -35,10 +38,39 @@ from src.core.schema import (
     ToolResult,
     ToolResultStatus,
 )
-from src.tools import DEFAULT_TOOLS, BaseTool
+from src.tools import DEFAULT_TOOLS, BaseTool, load_plugin_tool_classes
 from src.utils.helpers import format_tool_result, format_tool_trace, generate_request_id, is_search_result, refine_search_result
 
 logger = get_logger("agents.base")
+
+
+class AgentCancelled(Exception):
+    """
+    运行被取消
+    """
+
+    def __init__(self, message: str = "cancelled", partial: str = "") -> None:
+        super().__init__(message)
+        self.partial = partial or ""
+
+
+class _StreamFunction:
+    def __init__(self, name: str = "", arguments: str = "") -> None:
+        self.name = name
+        self.arguments = arguments
+
+
+class _StreamToolCall:
+    def __init__(self, call_id: str = "", function: Optional[_StreamFunction] = None) -> None:
+        self.id = call_id
+        self.function = function or _StreamFunction()
+
+
+class _StreamMessage:
+    def __init__(self, content: str = "", tool_calls: Optional[List[_StreamToolCall]] = None) -> None:
+        self.content = content
+        self.tool_calls = tool_calls or []
+        self.text = content
 
 
 def _run_tool_in_subprocess(module_name: str, class_name: str, arguments: Dict[str, Any], result_queue) -> None:
@@ -73,6 +105,7 @@ class BaseAgent:
         config: Optional[Config] = None,
         memory: Optional[ConversationMemory] = None,
         system_prompt: Optional[str] = None,
+        profile: Optional[str] = None,
     ):
         """
         初始化智能体
@@ -82,12 +115,18 @@ class BaseAgent:
             config: 配置对象
             memory: 对话记忆
             system_prompt: 自定义系统提示词
+            profile: 模板名称
         """
         # 初始化日志
         init_logging()
         
         # 加载配置
         self.config = config or get_config()
+        self.profile_name: Optional[str] = None
+        profile_name = profile or self.config.active_profile
+        profile_config = resolve_profile(self.config, profile_name) if profile_name else None
+        if profile_config and profile_config.config_overrides:
+            self.config = Config(**self._merge_dict(self._config_to_dict(self.config), profile_config.config_overrides))
         
         # 初始化工作区
         self._init_workspace()
@@ -99,14 +138,17 @@ class BaseAgent:
         self.memory = memory or get_memory()
         
         # 设置系统提示词
-        if system_prompt:
-            self.base_system_prompt = system_prompt
+        prompt_override = system_prompt or self._load_prompt_override()
+        if prompt_override:
+            self.base_system_prompt = prompt_override
         else:
             self.base_system_prompt = get_system_prompt(
                 tools=list(self.tools.values())
             )
         
         self._refresh_system_message()
+        if profile_config:
+            apply_profile_to_agent(self, profile_config)
         
         # 初始化模型客户端
         self._init_client()
@@ -195,7 +237,31 @@ class BaseAgent:
         """
         组合完整系统提示词
         """
-        return self.base_system_prompt + self._build_workspace_section()
+        return self.base_system_prompt + self._build_time_section() + self._build_workspace_section()
+
+    def _build_time_section(self) -> str:
+        """
+        构建当前时间提示信息
+        """
+        now = datetime.now().astimezone()
+        time_text = now.strftime("%Y-%m-%d %H:%M:%S")
+        tz_name = now.tzname() or "local"
+        offset = now.utcoffset()
+        if offset is None:
+            offset_text = ""
+        else:
+            total_minutes = int(offset.total_seconds() // 60)
+            sign = "+" if total_minutes >= 0 else "-"
+            total_minutes = abs(total_minutes)
+            offset_text = f" (UTC{sign}{total_minutes // 60:02d}:{total_minutes % 60:02d})"
+        return f"""
+
+## 当前时间（极重要）
+当前时间: {time_text}
+时区: {tz_name}{offset_text}
+
+**要求**: 在所有回复中必须将当前时间视为极其重要的上下文因素，尤其涉及计划、截止、时效或新闻相关问题。
+"""
 
     def _refresh_system_message(self) -> None:
         """
@@ -203,6 +269,44 @@ class BaseAgent:
         """
         self.system_prompt = self._compose_system_prompt()
         self.memory.set_system_message(self.system_prompt)
+
+    def _load_prompt_override(self) -> Optional[str]:
+        """
+        读取配置中的系统提示词覆盖
+        """
+        config_prompt = getattr(self.config.agent, "system_prompt", None)
+        if config_prompt:
+            return config_prompt
+        prompt_path = getattr(self.config.agent, "system_prompt_path", None)
+        if not prompt_path:
+            return None
+        base_path = Path(prompt_path)
+        if not base_path.is_absolute():
+            base_path = find_project_root() / base_path
+        try:
+            return base_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            logger.warning(f"读取系统提示词失败: {exc}")
+            return None
+
+    @staticmethod
+    def _merge_dict(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        深度合并配置
+        """
+        merged = dict(base)
+        for key, value in override.items():
+            if isinstance(value, dict) and isinstance(merged.get(key), dict):
+                merged[key] = BaseAgent._merge_dict(merged[key], value)
+            else:
+                merged[key] = value
+        return merged
+
+    @staticmethod
+    def _config_to_dict(config: Config) -> Dict[str, Any]:
+        if hasattr(config, "model_dump"):
+            return config.model_dump()
+        return config.dict()
     
     def _extract_thinking(self, content: str) -> Optional[str]:
         """
@@ -241,7 +345,20 @@ class BaseAgent:
         self.tools: Dict[str, BaseTool] = {}
         
         # 使用默认工具或自定义工具
-        tool_list = tools or DEFAULT_TOOLS
+        tool_list = list(tools or DEFAULT_TOOLS)
+        plugin_config = getattr(self.config, "plugins", None)
+        if plugin_config and getattr(plugin_config, "enabled", False):
+            plugin_paths = getattr(plugin_config, "tool_paths", []) or []
+            allow_unsigned = getattr(plugin_config, "allow_unsigned", True)
+            plugin_tools = load_plugin_tool_classes(plugin_paths, allow_unsigned=allow_unsigned)
+            tool_list.extend(plugin_tools)
+
+        allowed_tools = set(getattr(self.config.tools, "allowed_tools", []) or [])
+        blocked_tools = set(getattr(self.config.tools, "blocked_tools", []) or [])
+        allowed_permissions = set(getattr(self.config.tools, "allowed_permissions", []) or [])
+        plugin_permissions = set(getattr(plugin_config, "allowed_permissions", []) or []) if plugin_config else set()
+        if plugin_permissions:
+            allowed_permissions.update(plugin_permissions)
         
         for tool in tool_list:
             # 如果是类，实例化它
@@ -249,7 +366,21 @@ class BaseAgent:
                 tool_instance = tool()
             else:
                 tool_instance = tool
-            
+
+            if tool_instance.name in self.tools:
+                logger.warning(f"重复工具已忽略: {tool_instance.name}")
+                continue
+            if allowed_tools and tool_instance.name not in allowed_tools:
+                logger.warning(f"工具未在白名单内: {tool_instance.name}")
+                continue
+            if tool_instance.name in blocked_tools:
+                logger.warning(f"工具已被禁用: {tool_instance.name}")
+                continue
+            required = getattr(tool_instance, "required_permissions", []) or []
+            if required and allowed_permissions:
+                if not set(required).issubset(allowed_permissions):
+                    logger.warning(f"工具权限不满足: {tool_instance.name}")
+                    continue
             self.tools[tool_instance.name] = tool_instance
             logger.debug(f"注册工具: {tool_instance.name}")
     
@@ -313,6 +444,98 @@ class BaseAgent:
 
         logger.error(f"LLM调用失败: {str(last_error)}")
         raise last_error
+
+    def _chunk_text(self, text: str, size: int = 80) -> List[str]:
+        if not text:
+            return []
+        if size <= 0:
+            return [text]
+        return [text[i:i + size] for i in range(0, len(text), size)]
+
+    def _call_llm_stream(
+        self,
+        messages: List[Dict[str, str]],
+        cancel_event: Optional[threading.Event] = None
+    ) -> Tuple[Any, int]:
+        """
+        流式调用LLM，返回消息与token统计
+        """
+        content_parts: List[str] = []
+        tool_calls: Dict[int, Dict[str, Any]] = {}
+        usage_total = 0
+
+        try:
+            stream = self.client.chat.completions.create(
+                model=self.config.model.effective_model_name,
+                messages=messages,
+                tools=self._get_tools_for_api() if self.tools else None,
+                temperature=self.config.model.temperature,
+                max_tokens=self.config.model.effective_max_tokens,
+                stream=True,
+                stream_options={"include_usage": True},
+            )
+            for chunk in stream:
+                if cancel_event and cancel_event.is_set():
+                    raise AgentCancelled(partial="".join(content_parts))
+                if not chunk or not getattr(chunk, "choices", None):
+                    continue
+                choice = chunk.choices[0]
+                delta = getattr(choice, "delta", None)
+                if delta:
+                    text = getattr(delta, "content", None)
+                    if text:
+                        content_parts.append(text)
+                        self._emit_ui_event("delta", text=text)
+                    delta_calls = getattr(delta, "tool_calls", None)
+                    if delta_calls:
+                        for call in delta_calls:
+                            idx = getattr(call, "index", 0)
+                            bucket = tool_calls.setdefault(idx, {"id": "", "function": {"name": "", "arguments": ""}})
+                            call_id = getattr(call, "id", None)
+                            if call_id:
+                                bucket["id"] = call_id
+                            func = getattr(call, "function", None)
+                            if func:
+                                name = getattr(func, "name", None)
+                                if name:
+                                    bucket["function"]["name"] += name
+                                args = getattr(func, "arguments", None)
+                                if args:
+                                    bucket["function"]["arguments"] += args
+                usage = getattr(chunk, "usage", None)
+                if usage is not None:
+                    total_tokens = getattr(usage, "total_tokens", None)
+                    if total_tokens is None and isinstance(usage, dict):
+                        total_tokens = usage.get("total_tokens")
+                    if total_tokens is not None:
+                        try:
+                            usage_total = int(total_tokens)
+                        except (TypeError, ValueError):
+                            usage_total = 0
+        except AgentCancelled:
+            raise
+        except Exception as exc:
+            logger.warning(f"流式调用失败，回退非流式: {exc}")
+            response = self._call_llm(messages)
+            message = response.choices[0].message
+            usage_total = self._extract_token_usage(response)
+            content = getattr(message, "content", None) or ""
+            for chunk in self._chunk_text(content, 80):
+                self._emit_ui_event("delta", text=chunk)
+            return message, usage_total
+
+        content = "".join(content_parts)
+        tool_list: List[_StreamToolCall] = []
+        if tool_calls:
+            for idx in sorted(tool_calls.keys()):
+                item = tool_calls[idx]
+                func_data = item.get("function") or {}
+                func = _StreamFunction(
+                    name=str(func_data.get("name") or ""),
+                    arguments=str(func_data.get("arguments") or "")
+                )
+                tool_list.append(_StreamToolCall(call_id=str(item.get("id") or ""), function=func))
+        return _StreamMessage(content=content, tool_calls=tool_list), usage_total
 
     def _should_retry(self, error: Exception) -> bool:
         """
@@ -483,7 +706,11 @@ class BaseAgent:
             return model.model_dump(), None
         return model.dict(), None
     
-    def _process_tool_calls(self, tool_calls: List[Any]) -> List[ToolResult]:
+    def _process_tool_calls(
+        self,
+        tool_calls: List[Any],
+        cancel_event: Optional[threading.Event] = None
+    ) -> List[ToolResult]:
         """
         处理工具调用
 
@@ -493,6 +720,9 @@ class BaseAgent:
         Returns:
             List[ToolResult]: 工具执行结果列表
         """
+        if cancel_event and cancel_event.is_set():
+            raise AgentCancelled()
+
         results: List[Optional[ToolResult]] = [None] * len(tool_calls)
         self._tool_call_ids = {}
         self._tool_call_args = {}
@@ -519,6 +749,8 @@ class BaseAgent:
             )
 
         for i, tool_call in enumerate(tool_calls):
+            if cancel_event and cancel_event.is_set():
+                raise AgentCancelled()
             tool_name = tool_call.function.name
             parse_error = None
 
@@ -621,6 +853,8 @@ class BaseAgent:
                 serial_entries.append(entry)
 
         for entry in serial_entries:
+            if cancel_event and cancel_event.is_set():
+                raise AgentCancelled()
             self._emit_ui_event(
                 "tool_start",
                 tool_name=entry["tool_name"],
@@ -640,6 +874,8 @@ class BaseAgent:
             max_workers = max(1, getattr(self.config.agent, "max_parallel_tools", 4))
             if len(parallel_entries) == 1 or max_workers == 1:
                 for entry in parallel_entries:
+                    if cancel_event and cancel_event.is_set():
+                        raise AgentCancelled()
                     self._emit_ui_event(
                         "tool_start",
                         tool_name=entry["tool_name"],
@@ -660,6 +896,8 @@ class BaseAgent:
                 ) as executor:
                     future_map = {}
                     for entry in parallel_entries:
+                        if cancel_event and cancel_event.is_set():
+                            raise AgentCancelled()
                         self._emit_ui_event(
                             "tool_start",
                             tool_name=entry["tool_name"],
@@ -704,7 +942,12 @@ class BaseAgent:
 
         return final_results
     
-    def run(self, user_input: str) -> AgentResponse:
+    def run(
+        self,
+        user_input: str,
+        stream: bool = False,
+        cancel_event: Optional[threading.Event] = None
+    ) -> AgentResponse:
         """
         运行智能体处理用户请求
 
@@ -712,6 +955,8 @@ class BaseAgent:
 
         Args:
             user_input: 用户输入
+            stream: 是否启用流式输出
+            cancel_event: 取消事件
 
         Returns:
             AgentResponse: 智能体响应
@@ -734,6 +979,8 @@ class BaseAgent:
         try:
             # 智能体循环
             while self.current_step < self.config.agent.max_iterations:
+                if cancel_event and cancel_event.is_set():
+                    raise AgentCancelled()
                 self.current_step += 1
                 
                 logger.info(f"迭代 {self.current_step}/{self.config.agent.max_iterations}")
@@ -751,12 +998,21 @@ class BaseAgent:
                 self.state = AgentState.THINKING
                 self._emit_ui_event("llm_start", iteration=self.current_step)
                 try:
-                    response = self._call_llm(messages)
+                    if stream:
+                        message, usage_total = self._call_llm_stream(messages, cancel_event=cancel_event)
+                        total_tokens_used += usage_total
+                        response = None
+                    else:
+                        response = self._call_llm(messages)
+                        message = response.choices[0].message
+                        total_tokens_used += self._extract_token_usage(response)
                 except TimeoutError as te:
                     logger.error(f"LLM 超时：{str(te)}")
                     # 将错误信息反馈给用户并终止
                     self.memory.add_assistant_message("[系统] LLM 调用超时，请稍后重试。")
                     return AgentResponse(success=False, final_answer="LLM 调用超时，请稍后重试。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=total_tokens_used, execution_time=time.time()-start_time, error_message=str(te))
+                except AgentCancelled as exc:
+                    raise exc
                 except Exception as e:
                     logger.error(f"LLM 调用失败：{str(e)}")
                     self.memory.add_assistant_message(f"[系统] LLM 调用失败：{str(e)}")
@@ -766,15 +1022,35 @@ class BaseAgent:
                 
                 # 解析响应
                 # 保护性检查响应是否为空或格式异常
-                if not response or not hasattr(response, 'choices') or not response.choices:
-                    logger.error("LLM 响应无效或为空")
-                    self.memory.add_assistant_message("[系统] LLM 响应无效或为空。")
-                    return AgentResponse(success=False, final_answer="LLM 响应无效或为空。", steps=self.steps, total_iterations=self.current_step, total_tokens_used=0, execution_time=time.time()-start_time, error_message="LLM 响应无效或为空")
-                
-                choice = response.choices[0]
-                message = choice.message
-                total_tokens_used += self._extract_token_usage(response)
-                
+                if stream:
+                    if not message:
+                        logger.error("LLM 流式响应为空")
+                        self.memory.add_assistant_message("[系统] LLM 流式响应为空。")
+                        return AgentResponse(
+                            success=False,
+                            final_answer="LLM 流式响应为空。",
+                            steps=self.steps,
+                            total_iterations=self.current_step,
+                            total_tokens_used=total_tokens_used,
+                            execution_time=time.time() - start_time,
+                            error_message="LLM 流式响应为空"
+                        )
+                else:
+                    if not response or not hasattr(response, 'choices') or not response.choices:
+                        logger.error("LLM 响应无效或为空")
+                        self.memory.add_assistant_message("[系统] LLM 响应无效或为空。")
+                        return AgentResponse(
+                            success=False,
+                            final_answer="LLM 响应无效或为空。",
+                            steps=self.steps,
+                            total_iterations=self.current_step,
+                            total_tokens_used=0,
+                            execution_time=time.time() - start_time,
+                            error_message="LLM 响应无效或为空"
+                        )
+                    choice = response.choices[0]
+                    message = choice.message
+
                 # 提取思考内容
                 content = getattr(message, 'content', None) or getattr(message, 'text', '') or ""
                 thinking_text = self._extract_thinking(content)
@@ -795,12 +1071,15 @@ class BaseAgent:
                         step=self.current_step
                     )
                 
+                if cancel_event and cancel_event.is_set():
+                    raise AgentCancelled(partial=getattr(message, "content", "") or "")
+
                 # 检查是否有工具调用
                 if message.tool_calls:
                     self.state = AgentState.EXECUTING
                     
                     # 处理工具调用
-                    tool_results = self._process_tool_calls(message.tool_calls)
+                    tool_results = self._process_tool_calls(message.tool_calls, cancel_event=cancel_event)
                     
                     # 将助手消息添加到记忆（包含工具调用）
                     # 需要将工具调用也添加到消息中，便于接口识别
@@ -907,6 +1186,19 @@ class BaseAgent:
                 error_message="达到最大迭代次数"
             )
             
+        except AgentCancelled as exc:
+            self.state = AgentState.STOPPED
+            execution_time = time.time() - start_time
+            logger.warning("智能体运行已取消")
+            return AgentResponse(
+                success=False,
+                final_answer=exc.partial or "",
+                steps=self.steps,
+                total_iterations=self.current_step,
+                total_tokens_used=total_tokens_used,
+                execution_time=execution_time,
+                error_message="cancelled"
+            )
         except Exception as e:
             self.state = AgentState.ERROR
             execution_time = time.time() - start_time
@@ -923,18 +1215,25 @@ class BaseAgent:
                 error_message=str(e)
             )
     
-    async def arun(self, user_input: str) -> AgentResponse:
+    async def arun(
+        self,
+        user_input: str,
+        stream: bool = False,
+        cancel_event: Optional[threading.Event] = None
+    ) -> AgentResponse:
         """
         异步运行智能体
 
         Args:
             user_input: 用户输入
+            stream: 是否启用流式输出
+            cancel_event: 取消事件
 
         Returns:
             AgentResponse: 智能体响应
         """
         # 目前简单地调用同步方法，未来可以实现真正的异步
-        return self.run(user_input)
+        return self.run(user_input, stream=stream, cancel_event=cancel_event)
     
     def add_tool(self, tool: Union[BaseTool, Type[BaseTool]]) -> None:
         """
@@ -979,6 +1278,16 @@ class BaseAgent:
             return True
         
         return False
+
+    def reload_tools(self) -> None:
+        """
+        重新加载工具
+        """
+        self._init_tools()
+        self.base_system_prompt = get_system_prompt(
+            tools=list(self.tools.values())
+        )
+        self._refresh_system_message()
     
     def reset(self) -> None:
         """重置Agent状态"""
@@ -1115,8 +1424,7 @@ class BaseAgent:
         Args:
             messages: 消息列表
         """
-        print("
-" + "=" * 80)
+        print("\n" + "=" * 80)
         print("当前上下文")
         print("=" * 80)
 
@@ -1131,8 +1439,7 @@ class BaseAgent:
                 "tool": "工具"
             }.get(role, f"未知角色: {role}")
 
-            print(f"
-[{i}] {role_display}")
+            print(f"\n[{i}] {role_display}")
             print("-" * 80)
 
             if role == "system" and "## 当前文件上下文" in content:
@@ -1151,7 +1458,5 @@ class BaseAgent:
                 print(f"工具: {msg['name']}")
 
         total_chars = sum(len(msg.get("content", "")) for msg in messages)
-        print(f"
-消息: {len(messages)} | 字符: {total_chars:,} | Token估计: ~{total_chars // 4:,}")
-        print("=" * 80 + "
-")
+        print(f"\n消息: {len(messages)} | 字符: {total_chars:,} | Token估计: ~{total_chars // 4:,}")
+        print("=" * 80 + "\n")

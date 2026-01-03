@@ -15,6 +15,9 @@ from src.utils.document_processor import (
     is_file_supported,
     encode_image_to_base64,
     get_image_size,
+    generate_document,
+    generate_docx,
+    generate_pdf,
 )
 
 __all__ = [
@@ -30,4 +33,7 @@ __all__ = [
     "is_file_supported",
     "encode_image_to_base64",
     "get_image_size",
+    "generate_document",
+    "generate_docx",
+    "generate_pdf",
 ]

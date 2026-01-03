@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{DASHBOARD_TITLE}}</title>
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="backdrop">
+    <span class="orb orb-a"></span>
+    <span class="orb orb-b"></span>
+    <span class="orb orb-c"></span>
+  </div>
+
+  <div class="page">
+    <header class="hero">
+      <div class="hero-title">
+        <div class="brand">SAMA</div>
+        <h1>{{DASHBOARD_TITLE}}</h1>
+        <p>Local task history, outputs, and metrics in one view.</p>
+      </div>
+      <div class="hero-stats">
+        <div class="stat" id="statTotal">
+          <div class="stat-label">Total Tasks</div>
+          <div class="stat-value">0</div>
+        </div>
+        <div class="stat" id="statSuccess">
+          <div class="stat-label">Success</div>
+          <div class="stat-value">0</div>
+        </div>
+        <div class="stat" id="statFailed">
+          <div class="stat-label">Failed</div>
+          <div class="stat-value">0</div>
+        </div>
+        <div class="stat" id="statToolCalls">
+          <div class="stat-label">Tool Calls</div>
+          <div class="stat-value">0</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="controls">
+      <div class="search">
+        <input id="searchInput" type="text" placeholder="Search task id, prompt, or metadata..." />
+      </div>
+      <div class="filters">
+        <select id="statusFilter">
+          <option value="all">All status</option>
+          <option value="success">Success</option>
+          <option value="failed">Failed</option>
+        </select>
+        <select id="sortFilter">
+          <option value="desc">Newest first</option>
+          <option value="asc">Oldest first</option>
+        </select>
+        <button id="refreshBtn">REFRESH</button>
+      </div>
+    </section>
+
+    <main class="layout">
+      <section class="panel task-panel">
+        <div class="panel-header">
+          <h2>Task Timeline</h2>
+          <span id="taskCount">0 items</span>
+        </div>
+        <div id="taskList" class="task-list"></div>
+      </section>
+      <section class="panel detail-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <h2>Task Detail</h2>
+            <span id="detailTitle">Select a task to view details</span>
+          </div>
+          <div class="panel-actions">
+            <button id="exportDetailMdBtn">EXPORT MD</button>
+            <button id="exportDetailJsonBtn">EXPORT JSON</button>
+          </div>
+        </div>
+        <div id="taskDetail" class="task-detail empty">
+          <div class="empty-card">
+            <div class="empty-title">No task selected</div>
+            <p>Select a task card to view the prompt, result, artifacts, and context snapshot.</p>
+          </div>
+        </div>
+      </section>
+      <section class="panel insight-panel">
+        <div class="panel-header">
+          <h2>Insights</h2>
+          <span id="trendBadge">--</span>
+        </div>
+        <div class="insight-block">
+          <h3>Execution Trend</h3>
+          <div id="trendSparkline" class="sparkline-box"></div>
+          <div id="trendSummary" class="mini-list"></div>
+        </div>
+        <div class="insight-block">
+          <h3>Tool Metrics</h3>
+          <div id="toolMetricList" class="mini-list"></div>
+        </div>
+        <div class="insight-block">
+          <h3>Workflow Library</h3>
+          <input id="workflowSearch" type="text" placeholder="Filter workflows">
+          <div id="workflowList" class="workflow-list"></div>
+          <div id="workflowPreview" class="preview">Select a workflow to preview.</div>
+          <div class="workflow-actions">
+            <button id="openWorkflowBtn">OPEN</button>
+            <button id="refreshWorkflowBtn">REFRESH</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/assets/app.js"></script>
+</body>
+</html>

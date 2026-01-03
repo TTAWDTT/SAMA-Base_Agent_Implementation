@@ -26,6 +26,7 @@ class ShellTool(BaseTool):
     
     name: str = "shell"
     subprocess_safe: bool = True
+    required_permissions = ["shell"]
     
     description: str = """命令行执行工具，在系统命令行中执行命令并返回结果。
 

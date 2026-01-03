@@ -13,14 +13,11 @@
 # ==============================================================================
 
 import argparse
-import json
 import os
-import shutil
 import sys
 import io
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 # 修复 Windows 编码问题
 if sys.platform == 'win32':
@@ -35,7 +32,13 @@ from src import (
     BaseAgent,
     init_logging,
     get_logger,
-    preprocess_files,
+)
+from src.runtime import (
+    snapshot_top_level_files,
+    move_top_level_files_to_output,
+    update_task_artifact_index,
+    TaskRunner,
+    TaskSpec,
 )
 
 
@@ -181,111 +184,6 @@ def extract_task_info(row: Any) -> Tuple[str, str, List[str]]:
     
     return task_id, prompt, reference_files
 
-
-def save_result(
-    task_id: str,
-    prompt: str,
-    response: Any,
-    processed_files: Optional[Dict] = None
-) -> str:
-    """
-    保存任务结果 / Save task result
-    
-    Args:
-        task_id: 任务ID / Task ID
-        prompt: 原始提示词 / Original prompt
-        response: Agent响应 / Agent response
-        processed_files: 预处理的文件信息 / Preprocessed file info
-        
-    Returns:
-        str: 输出目录路径 / Output directory path
-    """
-    # 创建输出目录
-    output_dir = Path(OUTPUT_DIR) / task_id
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 构建结果数据
-    result = {
-        "task_id": task_id,
-        "timestamp": datetime.now().isoformat(),
-        "prompt": prompt,
-        "success": response.success if hasattr(response, 'success') else False,
-        "final_answer": response.final_answer if hasattr(response, 'final_answer') else str(response),
-        "total_iterations": response.total_iterations if hasattr(response, 'total_iterations') else 0,
-        "execution_time": response.execution_time if hasattr(response, 'execution_time') else 0,
-        "error_message": response.error_message if hasattr(response, 'error_message') else None,
-    }
-    
-    # 添加预处理文件信息
-    if processed_files:
-        result["processed_files"] = {
-            "file_count": processed_files.get("file_count", 0),
-            "image_count": processed_files.get("image_count", 0),
-            "files": processed_files.get("files", []),
-        }
-    
-    # 保存结果JSON
-    result_path = output_dir / "result.json"
-    with open(result_path, 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
-    
-    # 保存最终答案到文本文件
-    answer_path = output_dir / "answer.txt"
-    with open(answer_path, 'w', encoding='utf-8') as f:
-        f.write(result["final_answer"])
-    
-    print(f"✅ 结果已保存 / Result saved to: {output_dir}")
-    
-    return str(output_dir)
-
-
-def _snapshot_top_level_files(path: Path) -> set:
-    """
-    快照指定目录下的顶层文件名（不递归子目录）。
-    返回文件名集合（只包含顶层文件，不含路径）。
-    """
-    files = set()
-    try:
-        if not path.exists() or not path.is_dir():
-            return files
-        for p in path.iterdir():
-            try:
-                if p.is_file():
-                    files.add(p.name)
-            except Exception:
-                continue
-    except Exception:
-        return set()
-    return files
-
-
-def _move_top_level_files_to_output(
-    source_dir: Path,
-    new_files: set,
-    task_id: str,
-    root: Path,
-    source_label: str
-) -> None:
-    """
-    将指定目录下的新顶层文件移动到 outputs/{task_id} 下，保留文件名。
-    只处理文件，不处理文件夹或子目录内的内容。
-    """
-    out_base = Path(root) / OUTPUT_DIR / task_id
-    out_base.mkdir(parents=True, exist_ok=True)
-    prefix = f"{source_label}/" if source_label else ""
-
-    for name in sorted(new_files):
-        src = source_dir / name
-        if not src.exists() or not src.is_file():
-            continue
-        dest = out_base / name
-        try:
-            shutil.move(str(src), str(dest))
-            print(f"   ↪️  已移动 {prefix}{name} -> {dest}")
-        except Exception as e:
-            print(f"   ⚠️  无法移动 {prefix}{name}: {e}")
-            
-            
 # ==============================================================================
 # 主处理函数
 # ==============================================================================
@@ -294,7 +192,7 @@ def process_task(
     task_id: str,
     prompt: str,
     reference_files: List[str],
-    agent: BaseAgent,
+    runner: TaskRunner,
     logger: Any
 ) -> Any:
     """
@@ -304,7 +202,7 @@ def process_task(
         task_id: 任务ID / Task ID
         prompt: 提示词 / Prompt
         reference_files: 参考文件列表 / Reference file list
-        agent: Agent实例 / Agent instance
+        runner: 任务运行器 / Task runner
         logger: 日志器 / Logger
         
     Returns:
@@ -314,44 +212,15 @@ def process_task(
     print(f"📋 任务 / Task: {task_id}")
     print(f"{'=' * 60}")
     
-    # 预处理文件
-    processed_files = None
-    enhanced_prompt = prompt
-    
+    existing_files = []
     if reference_files:
-        print(f"📁 发现 {len(reference_files)} 个参考文件 / Found {len(reference_files)} reference files")
-        
-        # 检查文件是否存在
-        existing_files = []
+        print(f"?? 发现 {len(reference_files)} 个参考文件 / Found {len(reference_files)} reference files")
         for file_path in reference_files:
             if os.path.exists(file_path):
                 existing_files.append(file_path)
-                print(f"   ✓ {file_path}")
+                print(f"   ? {file_path}")
             else:
-                print(f"   ✗ {file_path} (不存在 / not found)")
-        
-        # 处理存在的文件
-        if existing_files:
-            try:
-                print(f"\n🔄 正在预处理文件... / Preprocessing files...")
-                processed_files = preprocess_files(task_id, existing_files)
-                
-                # 增强提示词
-                file_content = processed_files.get("content", "")
-                if file_content:
-                    enhanced_prompt = f"""{prompt}
-
-## 参考文件内容
-
-{file_content}
-"""
-                    print(f"   📄 已处理 {processed_files.get('file_count', 0)} 个文档")
-                    print(f"   🖼️  已处理 {processed_files.get('image_count', 0)} 张图片")
-                
-            except Exception as e:
-                logger.error(f"文件预处理失败 / File preprocessing failed: {e}")
-                print(f"⚠️  文件预处理失败 / File preprocessing failed: {e}")
-    
+                print(f"   ? {file_path} (不存在 / not found)")
     # 显示提示词
     print(f"\n📝 提示词 / Prompt:")
     print(f"   {prompt[:200]}..." if len(prompt) > 200 else f"   {prompt}")
@@ -360,7 +229,9 @@ def process_task(
     print(f"\n🤖 Agent开始处理... / Agent processing...")
     
     try:
-        response = agent.run(enhanced_prompt)
+        task = TaskSpec(task_id=task_id, prompt=prompt, reference_files=existing_files)
+        result = runner.run_task(task, preprocess=True)
+        response = result.response
         
         # 显示结果
         print(f"\n{'=' * 60}")
@@ -372,8 +243,11 @@ def process_task(
         print(f"\n💬 最终答案 / Final Answer:")
         print(f"   {response.final_answer[:500]}..." if len(response.final_answer) > 500 else f"   {response.final_answer}")
         
-        # 保存结果
-        save_result(task_id, prompt, response, processed_files)
+        if result.processed_files:
+            print(f"   ?? 已处理 {result.processed_files.get('file_count', 0)} 个文档")
+            print(f"   ???  已处理 {result.processed_files.get('image_count', 0)} 张图片")
+
+        runner.save_result(result)
         
         return response
         
@@ -516,6 +390,7 @@ def main():
     
     try:
         agent = BaseAgent()
+        runner = TaskRunner(agent, logger=logger, output_dir=OUTPUT_DIR)
         print("   ✓ Agent初始化成功 / Agent initialized successfully")
     except Exception as e:
         print(f"❌ Agent初始化失败 / Agent initialization failed: {e}")
@@ -528,13 +403,13 @@ def main():
         try:
             # 快照 workspace/ 根目录在任务开始前的文件列表（仅顶层文件）
             workspace_dir = project_root / "workspace"
-            _before_snapshot = _snapshot_top_level_files(workspace_dir)
-            _root_before_snapshot = _snapshot_top_level_files(project_root)
+            _before_snapshot = snapshot_top_level_files(workspace_dir)
+            _root_before_snapshot = snapshot_top_level_files(project_root)
 
             row = df.iloc[idx]
             task_id, prompt, reference_files = extract_task_info(row)
 
-            response = process_task(task_id, prompt, reference_files, agent, logger)
+            response = process_task(task_id, prompt, reference_files, runner, logger)
             results.append({
                 "row": idx,
                 "task_id": task_id,
@@ -542,17 +417,32 @@ def main():
             })
 
             # 快照任务结束后 workspace/ 根目录文件列表，移动新增的顶层文件到 outputs/{task_id}
-            _after_snapshot = _snapshot_top_level_files(workspace_dir)
-            _root_after_snapshot = _snapshot_top_level_files(project_root)
+            _after_snapshot = snapshot_top_level_files(workspace_dir)
+            _root_after_snapshot = snapshot_top_level_files(project_root)
             new_files = set(_after_snapshot) - set(_before_snapshot)
             root_new_files = set(_root_after_snapshot) - set(_root_before_snapshot)
             if new_files:
                 print(f"\n📦 发现 {len(new_files)} 个新文件在 workspace/ 根目录，将移动到 outputs/{task_id}...")
-                _move_top_level_files_to_output(workspace_dir, new_files, task_id, project_root, "workspace")
+                move_top_level_files_to_output(
+                    workspace_dir,
+                    new_files,
+                    task_id,
+                    project_root,
+                    "workspace",
+                    output_dir=OUTPUT_DIR
+                )
             if root_new_files:
                 print(f"\n📦 发现 {len(root_new_files)} 个新文件在根目录，将移动到 outputs/{task_id}...")
-                _move_top_level_files_to_output(project_root, root_new_files, task_id, project_root, "")
+                move_top_level_files_to_output(
+                    project_root,
+                    root_new_files,
+                    task_id,
+                    project_root,
+                    "",
+                    output_dir=OUTPUT_DIR
+                )
 
+            update_task_artifact_index(task_id, output_dir=OUTPUT_DIR)
             # 重置智能体状态
             agent.reset()
 

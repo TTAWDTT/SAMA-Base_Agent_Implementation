@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{CHAT_TITLE}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Oxanium:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+  <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+  <div class="canvas"></div>
+
+  <div class="app-shell">
+    <div id="moduleBackdrop" class="module-backdrop"></div>
+    <div class="app-titlebar">
+      <div class="title-left">
+        <div class="window-controls">
+          <span class="dot dot-red"></span>
+          <span class="dot dot-yellow"></span>
+          <span class="dot dot-green"></span>
+        </div>
+        <div class="theme-switch">
+          <button class="theme-btn active" data-theme="light" title="Light theme">LIGHT</button>
+          <button class="theme-btn" data-theme="dark" title="Night theme">NIGHT</button>
+          <button class="theme-btn" data-theme="red" title="Red theme">RED</button>
+        </div>
+      </div>
+      <div class="title-crumbs">console / live / terminal</div>
+      <div class="title-actions">
+        <button id="syncBtn" class="mini ghost" title="Refresh status">SYNC</button>
+        <button id="dashboardBtn" class="mini ghost" title="Open dashboard">DASH</button>
+        <button id="linkBtn" class="mini" title="Copy session link">LINK</button>
+      </div>
+    </div>
+
+    <main class="app-body">
+      <nav class="nav-rail">
+        <button class="rail-btn" data-action="todo" title="Task board">T</button>
+        <button class="rail-btn active" data-action="focus" title="Focus input">A</button>
+        <button class="rail-btn" data-action="top" title="Scroll to top">B</button>
+        <button class="rail-btn" data-action="bottom" title="Scroll to bottom">C</button>
+        <button class="rail-btn" data-action="export" title="Export transcript">D</button>
+        <button class="rail-btn" data-action="compact" title="Toggle compact view">E</button>
+        <button class="rail-btn" data-action="calm" title="Toggle calm mode">F</button>
+      </nav>
+
+      <aside class="session-panel panel-card">
+        <div class="brand-card">
+          <div class="logo" data-text="{{CHAT_TITLE}}">{{CHAT_TITLE}}</div>
+          <div class="subtitle">Local agent console</div>
+          <div class="signal-row">
+            <span>NODE: PRIME</span>
+            <span>LINK: STABLE</span>
+          </div>
+        </div>
+
+        <div class="panel-header compact">
+          <h3>THREADS</h3>
+          <span class="panel-pill">ACTIVE</span>
+        </div>
+        <div class="session-list">
+          <div class="session-item active" data-slot="alpha">
+            <div class="session-title">Session Alpha</div>
+            <div class="session-meta">Ready</div>
+          </div>
+          <div class="session-item" data-slot="delta">
+            <div class="session-title">Session Delta</div>
+            <div class="session-meta">Unlinked</div>
+          </div>
+          <div class="session-item" data-slot="echo">
+            <div class="session-title">Session Echo</div>
+            <div class="session-meta">Unlinked</div>
+          </div>
+        </div>
+      </aside>
+
+      <section class="chat-panel panel-card">
+        <div class="panel-header">
+          <h2>CHAT LOG</h2>
+          <div class="panel-tags">
+            <span id="sessionBadge">SESSION: --</span>
+            <span id="modelBadge">MODEL: --</span>
+          </div>
+        </div>
+        <div class="chat-toolbar">
+          <div class="search-box">
+            <input id="searchInput" type="text" placeholder="Search messages">
+            <button id="searchClearBtn" class="mini ghost">CLEAR</button>
+          </div>
+          <div class="filter-group">
+            <button class="filter-btn active" data-role="all">ALL</button>
+            <button class="filter-btn" data-role="user">USER</button>
+            <button class="filter-btn" data-role="assistant">SAMA</button>
+            <button class="filter-btn" data-role="system">SYSTEM</button>
+            <button class="filter-btn" data-role="pinned">PINNED</button>
+          </div>
+        </div>
+        <div class="chat-log-actions">
+          <button id="loadOlderBtn" class="mini ghost">LOAD OLDER</button>
+          <button id="refreshPinsBtn" class="mini">SYNC PINS</button>
+          <button id="exportMdBtn" class="mini ghost">EXPORT MD</button>
+          <button id="exportJsonBtn" class="mini ghost">EXPORT JSON</button>
+        </div>
+        <div id="chatLog" class="chat-log"></div>
+        <div class="input-panel">
+          <div class="input-meta">
+            <span>INPUT LINE</span>
+            <span id="latencyBadge">LATENCY: --</span>
+          </div>
+          <div class="template-row">
+            <input id="templateName" type="text" placeholder="Template name">
+            <select id="templateSelect"></select>
+            <button id="saveTemplateBtn" class="mini ghost">SAVE</button>
+            <button id="insertTemplateBtn" class="mini">INSERT</button>
+          </div>
+          <div id="replyBanner" class="reply-banner">
+            <span id="replyLabel">Replying to --</span>
+            <button id="replyClearBtn" class="mini ghost">CLEAR</button>
+          </div>
+          <div id="suggestions" class="suggestions"></div>
+          <textarea id="messageInput" placeholder="Type a message. Ctrl+Enter to send."></textarea>
+          <div class="input-actions">
+            <button id="sendBtn">SEND</button>
+            <button id="stopBtn" class="ghost">STOP</button>
+            <button id="continueBtn" class="ghost">CONTINUE</button>
+            <button id="newSessionBtn">NEW SESSION</button>
+            <button id="resetBtn">RESET MEMORY</button>
+            <button id="clearBtn">CLEAR SCREEN</button>
+            <button id="streamBtn" class="ghost">STREAM ON</button>
+            <button id="commandBtn" class="ghost">COMMANDS</button>
+            <button id="exportDocxBtn" class="mini ghost">DOCX</button>
+            <button id="exportPdfBtn" class="mini ghost">PDF</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="todo-panel panel-card" id="todoPanel">
+        <div class="panel-header">
+          <h2>TASKS</h2>
+          <div class="panel-tags">
+            <span id="todoProjectBadge">PROJECT: INBOX</span>
+            <span id="todoCountBadge">TASKS: 0</span>
+          </div>
+        </div>
+        <div class="todo-body">
+          <aside class="todo-col todo-projects">
+            <div class="todo-block">
+              <div class="todo-block-title">PROJECTS</div>
+              <div id="todoProjectList" class="list-stack"></div>
+              <div class="note-actions">
+                <input id="todoProjectInput" type="text" placeholder="New project">
+                <button id="addTodoProjectBtn" class="mini">ADD</button>
+              </div>
+            </div>
+            <div class="todo-block">
+              <div class="todo-block-title">SMART LISTS</div>
+              <div id="todoSmartList" class="list-stack"></div>
+            </div>
+          </aside>
+          <div class="todo-col todo-main">
+          <div class="todo-quick">
+            <input id="todoQuickInput" type="text" placeholder="Quick add task">
+            <select id="todoQuickPriority">
+              <option value="P1">P1</option>
+              <option value="P2" selected>P2</option>
+              <option value="P3">P3</option>
+              <option value="P0">P0</option>
+            </select>
+            <input id="todoQuickDue" type="datetime-local">
+            <button id="todoAddBtn">ADD</button>
+          </div>
+          <div class="todo-filter">
+            <input id="todoSearchInput" type="text" placeholder="Search tasks">
+            <input id="todoTagFilterInput" type="text" placeholder="Filter tags (comma separated)">
+            <button id="todoFilterClearBtn" class="ghost">CLEAR</button>
+          </div>
+          <div class="todo-board">
+              <div class="todo-section">
+                <div class="todo-section-title">TODAY</div>
+                <div id="todoTodayList" class="todo-items"></div>
+              </div>
+              <div class="todo-section">
+                <div class="todo-section-title">UP NEXT</div>
+                <div id="todoUpcomingList" class="todo-items"></div>
+              </div>
+              <div class="todo-section">
+                <div class="todo-section-title">BACKLOG</div>
+                <div id="todoBacklogList" class="todo-items"></div>
+              </div>
+              <div class="todo-section">
+                <div class="todo-section-title">BLOCKED</div>
+                <div id="todoBlockedList" class="todo-items"></div>
+              </div>
+              <div class="todo-section">
+                <div class="todo-section-title">DONE</div>
+                <div id="todoDoneList" class="todo-items"></div>
+              </div>
+            </div>
+          </div>
+          <aside class="todo-col todo-detail">
+            <div class="todo-block">
+              <div class="todo-block-title">TASK DETAIL</div>
+              <div class="todo-collapse" data-collapse="core">
+                <div class="todo-collapse-header">
+                  <span>CORE</span>
+                  <button class="todo-collapse-toggle mini ghost" data-target="core">TOGGLE</button>
+                </div>
+                <div class="todo-collapse-body">
+                  <input id="todoDetailTitle" type="text" placeholder="Title">
+                  <div class="todo-detail-grid">
+                    <select id="todoDetailStatus">
+                      <option value="todo">TODO</option>
+                      <option value="doing">DOING</option>
+                      <option value="blocked">BLOCKED</option>
+                      <option value="done">DONE</option>
+                    </select>
+                    <select id="todoDetailPriority">
+                      <option value="P1">P1</option>
+                      <option value="P2">P2</option>
+                      <option value="P3">P3</option>
+                      <option value="P0">P0</option>
+                    </select>
+                  </div>
+                  <input id="todoDetailProject" type="text" placeholder="Project">
+                  <input id="todoDetailDue" type="datetime-local">
+                </div>
+              </div>
+              <div class="todo-collapse" data-collapse="meta">
+                <div class="todo-collapse-header">
+                  <span>META</span>
+                  <button class="todo-collapse-toggle mini ghost" data-target="meta">TOGGLE</button>
+                </div>
+                <div class="todo-collapse-body">
+                  <input id="todoDetailTags" type="text" placeholder="Tags (comma separated)">
+                  <input id="todoDetailLinks" type="text" placeholder="Links (comma separated)">
+                </div>
+              </div>
+              <div class="todo-collapse" data-collapse="notes">
+                <div class="todo-collapse-header">
+                  <span>NOTES</span>
+                  <button class="todo-collapse-toggle mini ghost" data-target="notes">TOGGLE</button>
+                </div>
+                <div class="todo-collapse-body">
+                  <textarea id="todoDetailNotes" placeholder="Notes"></textarea>
+                </div>
+              </div>
+              <div class="note-actions">
+                <button id="todoSaveBtn">SAVE</button>
+                <button id="todoArchiveBtn" class="ghost">ARCHIVE</button>
+                <button id="todoDeleteBtn" class="ghost">DELETE</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <aside class="side-panel">
+        <div class="status-card panel-card" data-module="primary">
+          <div class="status-label">STATUS</div>
+          <div id="statusIndicator" class="status-value" data-tone="ready">READY</div>
+          <div class="status-meta">
+            <span id="statusHint">Signal stable</span>
+            <span id="queueHint">Queue normal</span>
+          </div>
+          <div class="status-meta">
+            <span>Collaborators</span>
+            <span id="collabCount">1</span>
+          </div>
+          <div class="progress">
+            <div id="progressFill"></div>
+          </div>
+          <div class="status-meta">
+            <span id="progressLabel">Step 0</span>
+            <span id="tokenUsage">Tokens --</span>
+          </div>
+        </div>
+
+        <div class="info-card panel-card" data-module="primary">
+          <h3>SESSION METADATA</h3>
+          <div class="info-item"><span>Session</span><span id="sessionId">--</span></div>
+          <div class="info-item"><span>Model</span><span id="modelName">--</span></div>
+          <div class="info-item"><span>Base URL</span><span id="baseUrl">--</span></div>
+          <div class="info-item"><span>Profile</span><span id="profileName">--</span></div>
+        </div>
+
+        <div class="info-card panel-card" data-module="primary">
+          <h3>RUN STATS</h3>
+          <div class="info-item"><span>Iterations</span><span id="iterationCount">0</span></div>
+          <div class="info-item"><span>Elapsed</span><span id="elapsedTime">--</span></div>
+          <div class="info-item"><span>Success Rate</span><span id="successRate">--</span></div>
+          <div class="info-item"><span>Tokens</span><span id="tokenCount">--</span></div>
+          <div class="info-item">
+            <span>Reply Copy</span>
+            <button id="copyBtn" class="ghost">COPY LAST REPLY</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card" data-module="primary">
+          <h3>METRICS</h3>
+          <div id="metricsSummary" class="list-stack"></div>
+          <div id="metricsSparkline" class="sparkline-wrap"></div>
+          <div class="note-actions">
+            <button id="refreshMetricsBtn" class="mini ghost">REFRESH</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card module-dock" data-module="dock">
+          <h3>MODULE DOCK</h3>
+          <div class="note-actions">
+            <button id="moduleToggleBtn">OPEN MODULES</button>
+            <button id="moduleCloseBtn" class="ghost">CLOSE</button>
+          </div>
+          <div class="note-actions module-filter-row">
+            <select id="moduleFilter">
+              <option value="all">ALL MODULES</option>
+              <option value="memory">MEMORY</option>
+              <option value="automation">AUTOMATION</option>
+              <option value="media">MEDIA</option>
+              <option value="knowledge">KNOWLEDGE</option>
+              <option value="ops">OPS</option>
+              <option value="system">SYSTEM</option>
+              <option value="labs">LABS</option>
+              <option value="personal">PERSONAL</option>
+              <option value="insights">INSIGHTS</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>RUN LOG</h3>
+          <div id="runLogList" class="list-stack"></div>
+          <button id="clearRunLogBtn" class="mini ghost">CLEAR LOG</button>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>DASHBOARD</h3>
+          <div id="dashboardStatus" class="list-item">Not running.</div>
+          <div class="note-actions">
+            <button id="dashboardOpenBtn">OPEN</button>
+            <button id="dashboardCopyBtn" class="ghost">COPY LINK</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>PRESETS</h3>
+          <div class="note-actions preset-actions">
+            <button class="preset-btn" data-preset="engineer">ENGINEER</button>
+            <button class="preset-btn ghost" data-preset="writer">WRITER</button>
+            <button class="preset-btn ghost" data-preset="planner">PLANNER</button>
+          </div>
+          <div id="presetStatus" class="list-item">No preset applied.</div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>CONTEXT SNAPSHOT</h3>
+          <div id="contextSummary" class="list-stack"></div>
+          <div class="note-actions">
+            <button id="refreshContextBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div class="note-label">DEDUP STATS</div>
+          <div id="dedupStats" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card tips">
+          <h3>QUICK TIPS</h3>
+          <ul>
+            <li>Ctrl + Enter to send</li>
+            <li>New session creates a new memory</li>
+            <li>Reset memory clears only this session</li>
+          </ul>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>PIN BOARD</h3>
+          <div id="pinList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>ERROR LOG</h3>
+          <div id="errorList" class="list-stack"></div>
+          <button id="clearErrorsBtn" class="mini ghost">CLEAR ERRORS</button>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>AUDIT LOG</h3>
+          <div class="note-actions">
+            <input id="auditLimit" type="number" min="1" placeholder="Limit">
+            <select id="auditScope">
+              <option value="session">SESSION</option>
+              <option value="all">ALL</option>
+            </select>
+            <input id="auditType" type="text" placeholder="Type filter">
+            <button id="refreshAuditBtn" class="mini ghost">REFRESH</button>
+            <button id="exportAuditBtn" class="mini ghost">EXPORT</button>
+          </div>
+          <div id="auditList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>MEMORY NOTES</h3>
+          <div class="note-list">
+            <div class="note-group">
+              <div class="note-label">PROJECT</div>
+              <div id="projectNotes" class="list-stack"></div>
+            </div>
+            <div class="note-group">
+              <div class="note-label">LONG TERM</div>
+              <div id="longNotes" class="list-stack"></div>
+            </div>
+          </div>
+          <div class="note-form">
+            <input id="noteTitle" type="text" placeholder="Note title">
+            <textarea id="noteContent" placeholder="Write a note..."></textarea>
+            <div class="note-actions">
+              <button id="addProjectNoteBtn">ADD PROJECT NOTE</button>
+              <button id="addLongNoteBtn" class="ghost">ADD LONG NOTE</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>MEMORY CONTROL</h3>
+          <div class="note-actions">
+            <input id="snapshotLabel" type="text" placeholder="Snapshot label">
+            <button id="createSnapshotBtn">SNAPSHOT</button>
+            <button id="refreshSnapshotsBtn" class="ghost">REFRESH</button>
+          </div>
+          <div id="snapshotList" class="list-stack"></div>
+          <div class="note-actions">
+            <button id="archiveNowBtn" class="ghost">ARCHIVE NOW</button>
+            <button id="refreshArchivesBtn" class="ghost">ARCHIVES</button>
+          </div>
+          <div id="archiveList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>SCHEDULE</h3>
+          <div class="schedule-form">
+            <select id="scheduleMode">
+              <option value="in">IN (SECONDS)</option>
+              <option value="at">AT (ISO TIME)</option>
+            </select>
+            <input id="scheduleValue" type="text" placeholder="60 or 2026-01-01T12:00:00">
+            <input id="schedulePrompt" type="text" placeholder="Scheduled prompt">
+            <div class="note-actions">
+              <button id="addScheduleBtn">ADD</button>
+              <button id="refreshScheduleBtn" class="ghost">REFRESH</button>
+            </div>
+          </div>
+          <div id="scheduleList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>NEWS DIGEST</h3>
+          <div class="note-actions">
+            <input id="newsTopicInput" type="text" placeholder="Topics (comma separated)">
+            <input id="newsTimeInput" type="time">
+            <select id="newsEnabled">
+              <option value="true">ON</option>
+              <option value="false">OFF</option>
+            </select>
+            <button id="saveNewsConfigBtn" class="mini">SAVE</button>
+          </div>
+          <div class="note-actions">
+            <select id="newsObsidianEnabled">
+              <option value="true">OBSIDIAN ON</option>
+              <option value="false">OBSIDIAN OFF</option>
+            </select>
+            <input id="newsObsidianDir" type="text" placeholder="Obsidian directory">
+            <input id="newsObsidianFile" type="text" placeholder="Filename template">
+          </div>
+          <div class="note-actions">
+            <button id="refreshNewsBtn" class="mini">FETCH NOW</button>
+            <button id="loadNewsBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div id="newsList" class="list-stack"></div>
+          <div id="newsPreview" class="news-preview"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>MEDIA HUB</h3>
+          <div class="note-actions">
+            <input id="mediaAlertInput" type="text" placeholder="Alert keywords (comma separated)">
+            <input id="mediaTimeInput" type="time">
+            <select id="mediaEnabled">
+              <option value="true">ON</option>
+              <option value="false">OFF</option>
+            </select>
+            <button id="saveMediaConfigBtn" class="mini">SAVE</button>
+          </div>
+          <div class="note-actions">
+            <select id="mediaObsidianEnabled">
+              <option value="true">OBSIDIAN ON</option>
+              <option value="false">OBSIDIAN OFF</option>
+            </select>
+            <input id="mediaObsidianDir" type="text" placeholder="Obsidian directory">
+            <input id="mediaObsidianFile" type="text" placeholder="Filename template">
+          </div>
+          <div class="note-actions">
+            <button id="refreshMediaBtn" class="mini">FETCH NOW</button>
+            <button id="loadMediaBtn" class="mini ghost">REFRESH</button>
+            <button id="loadMediaSourcesBtn" class="mini ghost">SOURCES</button>
+          </div>
+          <div class="note-label">SOURCES</div>
+          <div id="mediaSourcesList" class="list-stack"></div>
+          <div class="note-label">ADD SOURCE</div>
+          <div class="note-actions">
+            <input id="mediaSourceName" type="text" placeholder="Name">
+            <input id="mediaSourcePlatform" type="text" placeholder="Platform">
+            <select id="mediaSourceType">
+              <option value="rss">RSS</option>
+              <option value="x">X</option>
+              <option value="youtube">YouTube</option>
+              <option value="bilibili">Bilibili</option>
+              <option value="tiktok">TikTok</option>
+              <option value="instagram">Instagram</option>
+            </select>
+            <input id="mediaSourceUrl" type="text" placeholder="RSS URL">
+            <select id="mediaSourceEnabled">
+              <option value="true">ON</option>
+              <option value="false">OFF</option>
+            </select>
+            <button id="addMediaSourceBtn" class="mini">ADD</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>MEDIA FEED</h3>
+          <div class="note-actions">
+            <input id="mediaSearchInput" type="text" placeholder="Search feed">
+            <select id="mediaFilterSelect">
+              <option value="all">ALL</option>
+              <option value="saved">SAVED</option>
+              <option value="unread">UNREAD</option>
+              <option value="alerts">ALERTS</option>
+            </select>
+            <button id="mediaSearchBtn" class="mini ghost">APPLY</button>
+          </div>
+          <div class="note-label">ADD ITEM</div>
+          <div class="note-actions">
+            <input id="mediaItemTitle" type="text" placeholder="Title">
+            <input id="mediaItemLink" type="text" placeholder="Link">
+            <input id="mediaItemSource" type="text" placeholder="Source">
+            <button id="addMediaItemBtn" class="mini">ADD</button>
+          </div>
+          <div class="note-label">ALERT HITS</div>
+          <div id="mediaAlertList" class="list-stack"></div>
+          <div class="note-label">TRENDS</div>
+          <div id="mediaTrends" class="list-stack"></div>
+          <div class="note-label">SAVED QUEUE</div>
+          <div id="mediaSavedList" class="list-stack"></div>
+          <div class="note-label">LATEST FEED</div>
+          <div id="mediaItemList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>MEDIA BRIEFS</h3>
+          <div class="note-actions">
+            <button id="refreshMediaBriefsBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div id="mediaBriefList" class="list-stack"></div>
+          <div id="mediaBriefPreview" class="news-preview"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>WEBHOOK CENTER</h3>
+          <div class="note-actions">
+            <input id="webhookUrlInput" type="text" placeholder="Webhook URL">
+            <input id="webhookHeadersInput" type="text" placeholder="Headers (JSON)">
+            <textarea id="webhookPayloadInput" placeholder="Payload (JSON)"></textarea>
+            <button id="sendWebhookBtn">SEND</button>
+          </div>
+          <div class="note-actions">
+            <input id="webhookLimitInput" type="number" min="1" placeholder="Limit">
+            <button id="refreshWebhookBtn" class="mini ghost">REFRESH</button>
+            <button id="clearWebhookBtn" class="mini ghost">CLEAR LOG</button>
+          </div>
+          <div id="webhookLogList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>ARTIFACTS</h3>
+          <div class="note-actions">
+            <input id="artifactSearchInput" type="text" placeholder="Search artifacts">
+            <button id="artifactSearchBtn" class="mini ghost">SEARCH</button>
+            <button id="refreshArtifactsBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div class="note-actions">
+            <select id="artifactSuccessFilter">
+              <option value="">SUCCESS: ALL</option>
+              <option value="true">SUCCESS: OK</option>
+              <option value="false">SUCCESS: FAIL</option>
+            </select>
+            <input id="artifactSourceFilter" type="text" placeholder="Source filter">
+            <input id="artifactTagFilter" type="text" placeholder="Tag filter">
+            <button id="artifactFilterBtn" class="mini ghost">FILTER</button>
+          </div>
+          <div id="artifactList" class="list-stack"></div>
+          <div class="note-actions">
+            <button id="archiveSelectedBtn" class="mini">ARCHIVE SELECTED</button>
+            <button id="clearSelectedBtn" class="mini ghost">CLEAR SELECTED</button>
+          </div>
+          <div class="note-actions">
+            <input id="cleanupKeepRecent" type="number" min="0" placeholder="Keep recent">
+            <input id="cleanupMaxDays" type="number" min="0" placeholder="Max days">
+            <select id="cleanupKeepFailed">
+              <option value="true">KEEP FAILED</option>
+              <option value="false">REMOVE FAILED</option>
+            </select>
+            <button id="cleanupBtn" class="mini ghost">CLEANUP</button>
+          </div>
+          <div class="artifact-preview">
+            <div class="note-label">PREVIEW</div>
+            <div id="artifactMeta" class="artifact-meta">Select an artifact set.</div>
+            <div id="artifactFiles" class="list-stack"></div>
+            <div id="artifactPreview" class="artifact-preview-box"></div>
+          </div>
+          <div class="artifact-compare">
+            <input id="artifactLeft" type="text" placeholder="task_id or task_id/file">
+            <input id="artifactRight" type="text" placeholder="task_id or task_id/file">
+            <button id="artifactDiffBtn" class="mini">DIFF</button>
+            <button id="artifactDiffAllBtn" class="mini ghost">COMPARE ALL</button>
+            <div id="artifactDiffList" class="list-stack"></div>
+            <div id="artifactDiff" class="diff-block"></div>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>ANALYTICS</h3>
+          <div class="info-item"><span>User Messages</span><span id="statUser">0</span></div>
+          <div class="info-item"><span>Assistant Messages</span><span id="statAssistant">0</span></div>
+          <div class="info-item"><span>System Messages</span><span id="statSystem">0</span></div>
+          <div class="info-item"><span>Top Topics</span><span id="statTopics">--</span></div>
+          <div class="summary-card">
+            <div class="note-label">SUMMARY</div>
+            <div id="summaryCard">No summary yet.</div>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>PLUGINS</h3>
+          <button id="reloadPluginsBtn" class="mini ghost">RELOAD</button>
+          <div id="pluginList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>CONFIG PANEL</h3>
+          <div class="config-grid">
+            <label>
+              Max Iterations
+              <input id="configIterations" type="number" min="1" step="1">
+            </label>
+            <label>
+              Memory Entries
+              <input id="configMemory" type="number" min="1" step="1">
+            </label>
+            <label>
+              Temperature
+              <input id="configTemp" type="number" min="0" max="1" step="0.05">
+            </label>
+            <label>
+              Context Tokens
+              <input id="configContext" type="number" min="0" step="100">
+            </label>
+            <label>
+              Model Name
+              <input id="configModelName" type="text">
+            </label>
+            <label>
+              Base URL
+              <input id="configBaseUrl" type="text">
+            </label>
+          </div>
+          <div class="config-grid">
+            <label>
+              System Token Ratio
+              <input id="configSystemRatio" type="number" min="0" max="1" step="0.05">
+            </label>
+            <label>
+              History Token Ratio
+              <input id="configHistoryRatio" type="number" min="0" max="1" step="0.05">
+            </label>
+            <label>
+              File Context Ratio
+              <input id="configFileRatio" type="number" min="0" max="1" step="0.05">
+            </label>
+            <label>
+              File Chunk Size
+              <input id="configFileChunk" type="number" min="0" step="50">
+            </label>
+            <label>
+              File Max Chunks
+              <input id="configFileMaxChunks" type="number" min="0" step="1">
+            </label>
+            <label>
+              File Min Score
+              <input id="configFileMinScore" type="number" min="0" step="1">
+            </label>
+            <label>
+              File Query Messages
+              <input id="configFileQueryMessages" type="number" min="0" step="1">
+            </label>
+            <label>
+              Retrieval Enabled
+              <select id="configHistoryRetrieval">
+                <option value="">AUTO</option>
+                <option value="true">ON</option>
+                <option value="false">OFF</option>
+              </select>
+            </label>
+            <label>
+              Retrieval Token Ratio
+              <input id="configRetrievalRatio" type="number" min="0" max="1" step="0.05">
+            </label>
+            <label>
+              Retrieval Max Messages
+              <input id="configRetrievalMaxMessages" type="number" min="0" step="1">
+            </label>
+            <label>
+              Retrieval Min Score
+              <input id="configRetrievalMinScore" type="number" min="0" step="1">
+            </label>
+            <label>
+              Retrieval Query Messages
+              <input id="configRetrievalQueryMessages" type="number" min="0" step="1">
+            </label>
+            <label>
+              Retrieval Roles
+              <input id="configRetrievalRoles" type="text" placeholder="user,assistant">
+            </label>
+            <label>
+              Notes Max Tokens
+              <input id="configNotesMaxTokens" type="number" min="0" step="50">
+            </label>
+          </div>
+          <div class="note-actions">
+            <button id="applyConfigBtn">APPLY CONFIG</button>
+            <button id="modeFastBtn" class="ghost">FAST</button>
+            <button id="modeBalancedBtn" class="ghost">BALANCED</button>
+            <button id="modeQualityBtn" class="ghost">QUALITY</button>
+          </div>
+          <div class="note-actions">
+            <select id="profileSelect"></select>
+            <button id="applyProfileBtn">APPLY PROFILE</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>KNOWLEDGE BASE</h3>
+          <div id="kbStatus" class="list-item">KB not loaded.</div>
+          <div class="note-label">ALIASES</div>
+          <div id="kbAliases" class="list-stack"></div>
+          <div class="note-actions">
+            <input id="kbPathInput" type="text" placeholder="Paths or alias=path, @alias">
+            <button id="kbIndexBtn">INDEX</button>
+            <button id="kbRebuildBtn" class="ghost">REBUILD</button>
+            <button id="kbClearBtn" class="ghost">CLEAR</button>
+          </div>
+          <div class="note-actions">
+            <input id="kbSearchInput" type="text" placeholder="Search KB">
+            <button id="kbSearchBtn" class="mini ghost">SEARCH</button>
+          </div>
+          <div id="kbResults" class="list-stack"></div>
+          <pre id="kbPreview"></pre>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>TASK BOARD</h3>
+          <div class="note-actions">
+            <input id="taskTitleInput" type="text" placeholder="Task title">
+            <select id="taskStatusInput">
+              <option value="todo">TODO</option>
+              <option value="doing">DOING</option>
+              <option value="blocked">BLOCKED</option>
+              <option value="done">DONE</option>
+            </select>
+            <select id="taskPriorityInput">
+              <option value="P1">P1</option>
+              <option value="P2" selected>P2</option>
+              <option value="P3">P3</option>
+              <option value="P0">P0</option>
+            </select>
+          </div>
+          <div class="note-actions">
+            <input id="taskTagsInput" type="text" placeholder="Tags (comma separated)">
+            <input id="taskDueInput" type="datetime-local">
+          </div>
+          <div class="note-actions">
+            <input id="taskLinksInput" type="text" placeholder="Links (comma separated)">
+          </div>
+          <div class="note-actions">
+            <textarea id="taskNotesInput" placeholder="Notes"></textarea>
+            <button id="addTaskBtn">ADD</button>
+            <button id="refreshTasksBtn" class="ghost">REFRESH</button>
+          </div>
+          <div id="taskStats" class="list-stack"></div>
+          <div id="taskList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>BOOKMARK VAULT</h3>
+          <div class="note-actions">
+            <input id="bookmarkTitleInput" type="text" placeholder="Title">
+            <input id="bookmarkUrlInput" type="text" placeholder="URL">
+          </div>
+          <div class="note-actions">
+            <input id="bookmarkTagsInput" type="text" placeholder="Tags (comma separated)">
+            <input id="bookmarkSourceInput" type="text" placeholder="Source">
+          </div>
+          <div class="note-actions">
+            <textarea id="bookmarkNotesInput" placeholder="Notes"></textarea>
+            <button id="addBookmarkBtn">ADD</button>
+            <button id="refreshBookmarksBtn" class="ghost">REFRESH</button>
+          </div>
+          <div id="bookmarkList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>REMINDER CENTER</h3>
+          <div class="note-actions">
+            <input id="reminderTitleInput" type="text" placeholder="Reminder title">
+            <input id="reminderDueInput" type="datetime-local">
+          </div>
+          <div class="note-actions">
+            <textarea id="reminderNotesInput" placeholder="Notes"></textarea>
+            <button id="addReminderBtn">ADD</button>
+            <button id="refreshRemindersBtn" class="ghost">REFRESH</button>
+          </div>
+          <div class="note-actions">
+            <input id="reminderLogLimit" type="number" min="1" placeholder="Log limit">
+            <button id="refreshReminderLogsBtn" class="mini ghost">LOAD LOGS</button>
+          </div>
+          <div id="reminderList" class="list-stack"></div>
+          <div id="reminderLogList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>FOCUS SESSIONS</h3>
+          <div class="note-actions">
+            <input id="focusLabelInput" type="text" placeholder="Session label">
+            <input id="focusDurationInput" type="number" min="1" placeholder="Minutes">
+          </div>
+          <div class="note-actions">
+            <textarea id="focusNotesInput" placeholder="Session notes"></textarea>
+            <button id="startFocusBtn">START</button>
+            <button id="stopFocusBtn" class="ghost">STOP</button>
+          </div>
+          <div id="focusTimer" class="list-item">Idle.</div>
+          <div id="focusList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>KNOWLEDGE MAP</h3>
+          <div class="note-actions">
+            <button id="refreshKbMapBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div class="note-label">TOP FOLDERS</div>
+          <div id="kbFolderList" class="list-stack"></div>
+          <div class="note-label">RECENT FILES</div>
+          <div id="kbRecentList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>WORKFLOW TEMPLATES</h3>
+          <div class="note-actions">
+            <input id="workflowTitleInput" type="text" placeholder="Template title">
+            <input id="workflowTagsInput" type="text" placeholder="Tags (comma separated)">
+          </div>
+          <div class="note-actions">
+            <textarea id="workflowSpecInput" placeholder="Workflow spec (JSON)"></textarea>
+          </div>
+          <div class="note-actions">
+            <button id="addWorkflowBtn">ADD</button>
+            <button id="updateWorkflowBtn" class="ghost">UPDATE</button>
+            <button id="runWorkflowBtn" class="ghost">RUN</button>
+            <button id="exportWorkflowBtn" class="ghost">EXPORT</button>
+            <button id="refreshWorkflowBtn" class="ghost">REFRESH</button>
+          </div>
+          <div id="workflowList" class="list-stack"></div>
+          <div id="workflowRunLog" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>ARTIFACT TAGS</h3>
+          <div class="note-actions">
+            <input id="artifactTagTaskInput" type="text" placeholder="Task ID">
+            <input id="artifactTagInput" type="text" placeholder="Tags (comma separated)">
+          </div>
+          <div class="note-actions">
+            <textarea id="artifactTagNotesInput" placeholder="Notes"></textarea>
+            <button id="saveArtifactTagsBtn">SAVE</button>
+            <button id="removeArtifactTagsBtn" class="ghost">REMOVE</button>
+            <button id="refreshArtifactTagsBtn" class="ghost">REFRESH</button>
+          </div>
+          <div id="artifactTagList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>SYSTEM MONITOR</h3>
+          <div id="systemMetrics" class="list-stack"></div>
+          <div class="note-actions">
+            <button id="refreshSystemMetricsBtn" class="mini ghost">REFRESH</button>
+          </div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>CODE REVIEW</h3>
+          <div class="note-actions">
+            <textarea id="reviewPathInput" placeholder="File paths (comma or newline)"></textarea>
+            <button id="reviewPathsBtn">REVIEW FILES</button>
+          </div>
+          <div class="note-actions">
+            <textarea id="reviewTextInput" placeholder="Paste snippet for review"></textarea>
+            <button id="reviewTextBtn" class="ghost">REVIEW SNIPPET</button>
+          </div>
+          <div id="reviewSummary" class="news-preview"></div>
+          <div id="reviewList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>DATA LAB</h3>
+          <div class="note-actions">
+            <input id="dataPathInput" type="text" placeholder="CSV path (optional)">
+            <input id="dataLimitInput" type="number" min="1" placeholder="Limit">
+          </div>
+          <div class="note-actions">
+            <textarea id="dataCsvInput" placeholder="Paste CSV content"></textarea>
+            <textarea id="dataOpsInput" placeholder="Operations JSON (optional)"></textarea>
+          </div>
+          <div class="note-actions">
+            <button id="previewDataBtn">PREVIEW</button>
+            <button id="transformDataBtn" class="ghost">TRANSFORM</button>
+          </div>
+          <div id="dataPreview" class="data-grid"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>LOGS CENTER</h3>
+          <div class="note-actions">
+            <input id="logsLimitInput" type="number" min="1" placeholder="Limit">
+            <button id="refreshLogsBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div id="logsList" class="list-stack"></div>
+        </div>
+
+        <div class="info-card panel-card">
+          <h3>TRIGGER WATCH</h3>
+          <div class="note-actions">
+            <button id="refreshTriggerBtn" class="mini ghost">REFRESH</button>
+          </div>
+          <div id="triggerList" class="list-stack"></div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/common.min.js"></script>
+  <script defer src="/assets/app.js"></script>
+</body>
+</html>

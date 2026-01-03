@@ -31,6 +31,7 @@ class PythonTool(BaseTool):
     
     name: str = "python"
     subprocess_safe: bool = True
+    required_permissions = ["python"]
     
     description: str = """Python代码执行工具，执行Python代码并返回结果。
 
@@ -273,20 +274,16 @@ class PythonTool(BaseTool):
 
             stdout_output = stdout_capture.getvalue()
             if stdout_output:
-                output_parts.append(f"输出:
-{stdout_output}")
+                output_parts.append(f"输出:\n{stdout_output}")
 
             stderr_output = stderr_capture.getvalue()
             if stderr_output:
-                output_parts.append(f"警告:
-{stderr_output}")
+                output_parts.append(f"警告:\n{stderr_output}")
 
             if not output_parts:
                 return "执行完成（REPL模式）"
 
-            return "
-
-".join(output_parts)
+            return "\n\n".join(output_parts)
 
         except Exception as e:
             return f"执行错误（REPL模式）: {type(e).__name__}: {str(e)}"

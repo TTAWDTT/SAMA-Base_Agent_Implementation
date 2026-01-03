@@ -2,7 +2,20 @@
 # 核心模块
 # ==============================================================================
 
-from src.core.config import Config, get_config, load_config
+from src.core.config import (
+    Config,
+    get_config,
+    load_config,
+    ArtifactsConfig,
+    ObservabilityConfig,
+    ProfileConfig,
+    QueueConfig,
+    DashboardConfig,
+    ChatUIConfig,
+    NotificationEventConfig,
+    NotificationsConfig,
+    KnowledgeBaseConfig,
+)
 from src.core.logger import get_logger, setup_logger, init_logging
 from src.core.memory import (
     FileContext,
@@ -23,6 +36,15 @@ from src.core.schema import (
 __all__ = [
     # 配置
     "Config",
+    "ArtifactsConfig",
+    "ObservabilityConfig",
+    "ProfileConfig",
+    "QueueConfig",
+    "DashboardConfig",
+    "ChatUIConfig",
+    "NotificationEventConfig",
+    "NotificationsConfig",
+    "KnowledgeBaseConfig",
     "get_config",
     "load_config",
     # 日志

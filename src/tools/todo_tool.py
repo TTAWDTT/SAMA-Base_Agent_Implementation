@@ -41,6 +41,7 @@ class TodoTool(BaseTool):
     """
     
     name: str = "todo"
+    required_permissions = ["tasks"]
     
     description: str = """待办任务管理工具，用于规划、跟踪和管理任务。
 

@@ -236,3 +236,39 @@ def estimate_tokens(text: str) -> int:
     chinese_chars = len(re.findall(r'[\u4e00-\u9fff]', text))
     other_chars = len(text) - chinese_chars
     return (chinese_chars // 2) + (other_chars // 4)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """
+    脱敏敏感内容
+    """
+    if not text:
+        return text
+    patterns = [
+        (r'(?i)(api[_-]?key\s*[:=]\s*)([^\s"\']+)', r"\1***"),
+        (r'(?i)(token\s*[:=]\s*)([^\s"\']+)', r"\1***"),
+        (r'(?i)(secret\s*[:=]\s*)([^\s"\']+)', r"\1***"),
+        (r'(?i)(password\s*[:=]\s*)([^\s"\']+)', r"\1***"),
+        (r'(sk-[A-Za-z0-9]{16,})', "***"),
+        (r'([A-Za-z0-9_\-]{24,})', "***"),
+    ]
+    result = text
+    for pattern, repl in patterns:
+        result = re.sub(pattern, repl, result)
+    return result
+
+
+def redact_sensitive_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    脱敏字典内容
+    """
+    def _redact(value: Any) -> Any:
+        if isinstance(value, str):
+            return redact_sensitive_text(value)
+        if isinstance(value, dict):
+            return {k: _redact(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_redact(v) for v in value]
+        return value
+
+    return _redact(payload)

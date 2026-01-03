@@ -22,6 +22,7 @@ class WebSearchTool(BaseTool):
     
     name: str = "web_search"
     subprocess_safe: bool = True
+    required_permissions = ["network"]
     
     description: str = """网络搜索工具，执行网络搜索并返回结构化结果。
 

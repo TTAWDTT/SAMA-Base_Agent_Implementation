@@ -33,6 +33,10 @@ agent:
   # 智能体工作区目录
   # 智能体将在此目录中生成中间文件、脚本等
   workspace: "./workspace"
+  # 系统提示词（可选）
+  system_prompt:
+  # 系统提示词文件路径（可选）
+  system_prompt_path:
 
 # 工具配置
 tools:
@@ -91,12 +95,39 @@ tools:
     # 搜索API配置
     api_key: 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
     engine: tavily
+  # 允许/禁止工具
+  allowed_tools: []
+  blocked_tools: []
+  allowed_permissions: []
+
+# 插件配置
+plugins:
+  # 是否启用插件加载
+  enabled: false
+  # 插件工具搜索路径
+  tool_paths:
+    - "./plugins"
+  # 是否自动重载插件
+  auto_reload: false
+  # 插件目录索引文件
+  catalog_files:
+    - "./plugins/catalog.json"
+  # 是否允许未签名插件
+  allow_unsigned: true
+  # 插件权限白名单
+  allowed_permissions: []
+
+# 工作流可视化
+workflow:
+  enabled: true
+  output_dir: "outputs/workflows"
+  include_html: true
 
 # 日志配置
 logging:
   # 日志级别
   # DEBUG、INFO、WARNING、ERROR、CRITICAL
-  level: "INFO"
+  level: "DEBUG"
   
   # 日志文件路径
   file_path: "outputs/logs/agent.log"
@@ -113,3 +144,342 @@ memory:
   # 记忆类型
   # buffer: 简单缓冲, summary: 摘要记忆
   type: "buffer"
+  # 是否启用历史检索
+  history_retrieval_enabled: true
+  # 历史检索预算占比
+  history_retrieval_token_ratio: 0.2
+  # 历史检索最大消息数
+  history_retrieval_max_messages: 12
+  # 历史检索最小分数
+  history_retrieval_min_score: 1
+  # 历史检索查询消息数
+  history_retrieval_query_messages: 4
+  # 历史检索包含角色
+  history_retrieval_include_roles:
+    - "user"
+    - "assistant"
+  # 项目记忆与长期记忆
+  project_notes_enabled: true
+  project_notes_max: 12
+  long_term_enabled: true
+  long_term_max: 20
+  notes_max_tokens: 1200
+  auto_note_interval: 18
+  auto_note_min_messages: 6
+  auto_note_max_messages: 12
+  auto_note_max_chars: 1200
+  # 置顶与检索
+  pins_enabled: true
+  pins_max: 8
+  search_max_results: 12
+  # 记忆治理
+  dedup_enabled: true
+  dedup_window: 30
+  auto_tag_enabled: true
+  auto_tag_max: 6
+  snapshot_enabled: true
+  snapshot_max: 12
+  archive_on_reset: true
+  archive_dir: "outputs/memory_archives"
+
+# 产物配置
+artifacts:
+  # 产物输出目录
+  output_dir: "outputs"
+  # 是否保存上下文快照
+  save_context_snapshot: true
+  # 快照保留的消息数
+  context_snapshot_max_messages: 50
+  # 快照是否包含文件
+  context_snapshot_include_files: true
+  # 快照是否包含对话消息
+  context_snapshot_include_messages: true
+  # 快照是否包含摘要
+  context_snapshot_include_summary: true
+  # 是否保存工具指标
+  save_tool_metrics: true
+  # 归档目录
+  archive_dir: "outputs/archives"
+  # 是否启用自动清理
+  cleanup_enabled: false
+  # 保留最近任务数量
+  cleanup_keep_recent: 50
+  # 清理最大保留天数（为空表示不按时间清理）
+  cleanup_max_days:
+  # 清理时是否保留失败任务
+  cleanup_keep_failed: true
+
+# 可观测性配置
+observability:
+  # 是否启用工具指标统计
+  enabled: true
+  # 指标文件路径
+  metrics_file: "outputs/tool_metrics.json"
+  # 指标CSV路径
+  metrics_csv_file: "outputs/tool_metrics.csv"
+  # 是否导出CSV
+  export_csv: true
+
+# 任务队列
+queue:
+  # 是否启用任务队列
+  enabled: true
+  # 队列文件路径
+  queue_file: "outputs/task_queue.json"
+  # 失败最大重试次数
+  max_retries: 1
+  # 启动时自动恢复未完成任务
+  auto_resume: true
+
+# 调度配置
+scheduler:
+  # 是否启用调度
+  enabled: true
+  # 调度任务文件
+  schedule_file: "outputs/schedule.json"
+  # 调度轮询间隔（秒）
+  poll_interval: 2.0
+  # 最大待执行任务数
+  max_pending: 200
+  # 失败时是否回滚会话
+  rollback_on_failure: true
+  # 触发器配置列表
+  triggers: []
+
+# 新闻摘要配置
+news_digest:
+  # 是否启用新闻摘要
+  enabled: true
+  # 每日推送时间（HH:MM）
+  schedule_time: "12:00"
+  # 关注主题关键词
+  topics:
+    - "AI"
+    - "科技"
+    - "投资"
+  # 输出目录
+  output_dir: "outputs/news"
+  # 是否推送到Obsidian
+  obsidian_enabled: true
+  # Obsidian目标目录
+  obsidian_dir: "D:\\桌面\\plan\\news"
+  # Obsidian文件名模板
+  obsidian_filename: "news_{date}.md"
+  # 最大条目数
+  max_items: 40
+  # 每个主题条目数上限
+  per_topic_limit: 6
+  # RSS来源列表（支持 {topic} 占位）
+  sources:
+    - "https://news.google.com/rss/search?q={topic}&hl=zh-CN&gl=CN&ceid=CN:zh-Hans"
+
+# 媒体中心配置
+media_hub:
+  # 是否启用媒体中心
+  enabled: true
+  # 每日抓取时间（HH:MM）
+  schedule_time: "12:00"
+  # 输出目录
+  output_dir: "outputs/media"
+  # 数据文件路径
+  sources_file: "outputs/media/sources.json"
+  items_file: "outputs/media/items.json"
+  alerts_file: "outputs/media/alerts.json"
+  brief_dir: "outputs/media/briefs"
+  # 是否推送到Obsidian
+  obsidian_enabled: false
+  # Obsidian目标目录
+  obsidian_dir: "D:\\桌面\\plan\\news"
+  # Obsidian文件名模板
+  obsidian_filename: "media_{date}.md"
+  # 最大条目数
+  max_items: 2000
+  # 每个源抓取上限
+  per_source_limit: 80
+  # 关注告警关键词
+  alerts:
+    - "AI"
+    - "科技"
+    - "投资"
+  # 订阅源列表
+  sources:
+    - id: "x-ai"
+      name: "X / AI (setup required)"
+      platform: "X"
+      type: "x"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Add RSSHub or API token before enabling."
+    - id: "x-tech"
+      name: "X / Tech (setup required)"
+      platform: "X"
+      type: "x"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Add RSSHub or API token before enabling."
+    - id: "bilibili"
+      name: "Bilibili (setup required)"
+      platform: "Bilibili"
+      type: "rss"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Use creator or channel RSS URL."
+    - id: "youtube"
+      name: "YouTube (setup required)"
+      platform: "YouTube"
+      type: "rss"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Use channel RSS URL."
+    - id: "tiktok"
+      name: "TikTok (setup required)"
+      platform: "TikTok"
+      type: "rss"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Use RSSHub or other RSS feed."
+    - id: "instagram"
+      name: "Instagram (setup required)"
+      platform: "Instagram"
+      type: "rss"
+      url: ""
+      enabled: false
+      requires_config: true
+      note: "Use RSSHub or other RSS feed."
+
+# 仪表盘配置
+dashboard:
+  # 是否启用任务仪表盘
+  enabled: true
+  # 监听地址
+  host: "127.0.0.1"
+  # 监听端口
+  port: 8765
+  # 页面标题
+  title: "SAMA Dashboard"
+  # 是否自动打开浏览器
+  auto_open: false
+
+# 聊天前端配置
+chat_ui:
+  # 是否启用聊天前端
+  enabled: true
+  # 监听地址
+  host: "0.0.0.0"
+  # 监听端口
+  port: 8790
+  # 页面标题
+  title: "sama"
+  # 是否自动打开浏览器
+  auto_open: true
+  # 端口占用时的最大尝试次数
+  max_port_tries: 10
+  # 请求体最大字节数
+  max_body_size: 20000
+  # 默认模板名称（为空表示使用全局默认）
+  profile:
+  # 是否允许通过WebUI更新配置
+  allow_config_update: true
+  # 是否启用协作会话
+  collaboration_enabled: true
+  # 协作客户端超时秒数
+  collaboration_timeout: 300
+  # 是否启用会话存储
+  session_store_enabled: true
+  # 会话存储目录
+  session_store_dir: "outputs/sessions"
+
+# 审计配置
+audit:
+  # 是否启用审计日志
+  enabled: true
+  # 审计日志路径
+  file_path: "outputs/audit.log"
+  # 是否进行敏感信息脱敏
+  redact_enabled: true
+
+# 通知与回调
+notifications:
+  # 是否启用通知
+  enabled: false
+  on_success:
+    enabled: false
+    message: "任务完成: {task_id}"
+    webhook_url:
+    webhook_headers: {}
+    webhook_timeout: 5
+    command:
+    write_file:
+    sound: false
+  on_failure:
+    enabled: false
+    message: "任务失败: {task_id}，原因: {error_message}"
+    webhook_url:
+    webhook_headers: {}
+    webhook_timeout: 5
+    command:
+    write_file:
+    sound: false
+  on_queue_complete:
+    enabled: false
+    message: "队列完成，成功 {queue_completed}，失败 {queue_failed}"
+    webhook_url:
+    webhook_headers: {}
+    webhook_timeout: 5
+    command:
+    write_file:
+    sound: false
+
+# 本地知识库
+knowledge_base:
+  # 是否启用知识库
+  enabled: true
+  # 索引文件路径
+  index_file: "outputs/knowledge_index.jsonl"
+  # 索引元数据路径
+  meta_file: "outputs/knowledge_meta.json"
+  # 分块大小（字符）
+  chunk_size: 1200
+  # 每个文件最大分块数
+  max_chunks_per_file: 6
+  # 包含的文件扩展名
+  include_extensions:
+    - ".md"
+    - ".txt"
+    - ".py"
+    - ".json"
+    - ".yaml"
+    - ".yml"
+  # 排除目录
+  exclude_dirs:
+    - "outputs"
+    - "workspace"
+    - ".git"
+    - "__pycache__"
+  # 最小匹配分数
+  min_score: 1
+  # 最大结果数
+  max_results: 6
+  # 摘要长度
+  snippet_length: 240
+
+# 角色模板
+active_profile:
+profiles:
+  - name: "default"
+    description: "默认模式"
+  - name: "coder"
+    description: "代码助手"
+    tools_include:
+      - "file"
+      - "python"
+      - "shell"
+    append_tools_description: true
+    config_overrides:
+      agent:
+        max_iterations: 200
